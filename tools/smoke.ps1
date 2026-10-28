@@ -33,6 +33,8 @@ if (Test-Path (Join-Path $work 'p.csv')) {
   }
 }
 if ($ids.Count -eq 0) { $ids = 0..70 | ForEach-Object { "$_" } }
+$max = if ($env:SMOKE_MAX) { [int]$env:SMOKE_MAX } else { 8 }
+if ($ids.Count -gt $max) { $ids = $ids[0..($max-1)] }
 
 $h = $null
 foreach ($id in $ids) {
