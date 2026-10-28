@@ -370,11 +370,15 @@ static NTSTATUS GpuApply()
     WCHAR tmp[700], dst[720], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
-        if (kb->Name.Length < 8) continue;
-        if (kb->Name.Buffer[0] != L'V' || kb->Name.Buffer[1] != L'E' ||
-            kb->Name.Buffer[2] != L'N' || kb->Name.Buffer[3] != L'_') continue;
+        if (kb->NameLength < 8) continue;
+        if (kb->Name[0] != L'V' || kb->Name[1] != L'E' ||
+            kb->Name[2] != L'N' || kb->Name[3] != L'_') continue;
 
-        RtlStringCchPrintfW(tmp, 700, L"%s\\%wZ", base, &kb->Name);
+        UNICODE_STRING kn;
+        kn.Buffer = kb->Name;
+        kn.Length = (USHORT)kb->NameLength;
+        kn.MaximumLength = (USHORT)kb->NameLength;
+        RtlStringCchPrintfW(tmp, 700, L"%s\\%wZ", base, &kn);
         WCHAR cls[64] = {0};
         if (!NT_SUCCESS(RegRead(tmp, L"ClassGUID", cls, 64))) continue;
         {
@@ -391,7 +395,11 @@ static NTSTATUS GpuApply()
         while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
             PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
             WCHAR src[760];
-            RtlStringCchPrintfW(src, 760, L"%s\\%wZ", tmp, &ib->Name);
+            UNICODE_STRING in2;
+            in2.Buffer = ib->Name;
+            in2.Length = (USHORT)ib->NameLength;
+            in2.MaximumLength = (USHORT)ib->NameLength;
+            RtlStringCchPrintfW(src, 760, L"%s\\%wZ", tmp, &in2);
             RtlStringCchPrintfW(dst, 720, L"%s-SPOOF", src);
             if (NT_SUCCESS(GpuMove(src, dst))) {
                 RtlStringCchPrintfW(cnt, 8, L"%lu", saved++);
