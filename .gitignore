@@ -8,3 +8,7 @@ driver/.wdk/
 driver/*.sys
 driver/*.obj
 
+
+tools/.kdu/
+app/res/*.dll
+

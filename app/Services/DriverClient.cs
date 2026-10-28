@@ -46,6 +46,7 @@ namespace VnSpoofer.Services
             string kdu = Path.Combine(Dir, "kdu.exe");
             Extract("VnSpoofer.sys", sys);
             Extract("kdu.exe", kdu);
+            Extract("drv64.dll", Path.Combine(Dir, "drv64.dll"));
 
             var providers = new System.Collections.Generic.List<string>();
             try

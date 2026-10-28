@@ -14,5 +14,6 @@
   <ItemGroup>
     <EmbeddedResource Include="res\VnSpoofer.sys" LogicalName="VnSpoofer.sys" />
     <EmbeddedResource Include="res\kdu.exe" LogicalName="kdu.exe" />
+    <EmbeddedResource Include="res\drv64.dll" LogicalName="drv64.dll" />
   </ItemGroup>
 </Project>
