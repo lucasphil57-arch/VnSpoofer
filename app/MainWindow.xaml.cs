@@ -208,7 +208,8 @@ namespace VnSpoofer
             _st = new State();
             _id = Identity.Random();
             Fill();
-            TxtCountdown.Text = "";`n            Log("Identite restauree.", "#7C8797");
+            TxtCountdown.Text = "";
+            Log("Identite restauree.", "#7C8797");
             Refresh();
         }
 
