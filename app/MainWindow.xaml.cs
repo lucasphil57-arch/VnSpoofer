@@ -74,6 +74,7 @@ namespace VnSpoofer
             PillText.Text = t;
             PillBg.Background = (Brush)new BrushConverter().ConvertFromString(bg);
             PillText.Foreground = (Brush)new BrushConverter().ConvertFromString(fg);
+            PillDot.Fill = (Brush)new BrushConverter().ConvertFromString(fg);
         }
 
         void Fill()
