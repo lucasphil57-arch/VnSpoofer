@@ -2,31 +2,40 @@
 $here = $PSScriptRoot
 $work = Join-Path $here '.wdk'
 New-Item -ItemType Directory -Force $work | Out-Null
+$sdkRoot = 'C:\Program Files (x86)\Windows Kits\10'
 
-function Fetch($id, $dir) {
-    if (Test-Path $dir) { return }
-    $zip = Join-Path $work "$id.zip"
-    Invoke-WebRequest "https://www.nuget.org/api/v2/package/$id" -OutFile $zip
+# --- SDK : on prend celui du systeme qui a um\excpt.h (le paquet nuget n'a pas um) ---
+$sdkCand = Get-ChildItem "$sdkRoot\Include" -Directory -ErrorAction SilentlyContinue |
+           Where-Object { Test-Path (Join-Path $_.FullName 'um\excpt.h') } |
+           Sort-Object Name -Descending
+if (-not $sdkCand) {
+    Get-ChildItem "$sdkRoot\Include" -Recurse -Filter excpt.h -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "excpt.h: $($_.FullName)" }
+    throw 'aucun SDK systeme avec um\excpt.h'
+}
+$sInc = $sdkCand[0].FullName
+$ver  = $sdkCand[0].Name
+Write-Host "SDK $ver"
+
+# --- WDK nuget epingle sur la meme version que le SDK ---
+$dir = Join-Path $work 'wdk'
+if (-not (Test-Path $dir)) {
+    $idx = 'https://api.nuget.org/v3-flatcontainer/microsoft.windows.wdk.x64/index.json'
+    $all = (Invoke-RestMethod $idx).versions
+    $pick = $all | Where-Object { $_ -like "$ver.*" } | Select-Object -Last 1
+    if (-not $pick) { $pick = $all | Select-Object -Last 1 }
+    Write-Host "WDK nuget $pick"
+    $zip = Join-Path $work 'wdk.zip'
+    Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/microsoft.windows.wdk.x64/$pick/microsoft.windows.wdk.x64.$pick.nupkg" -OutFile $zip
     Expand-Archive $zip -DestinationPath $dir -Force
 }
-
-Fetch 'Microsoft.Windows.WDK.x64' (Join-Path $work 'wdk')
-Fetch 'Microsoft.Windows.SDK.CPP.x64' (Join-Path $work 'sdk')
-
-$kh = Get-ChildItem (Join-Path $work 'wdk') -Recurse -Filter ntddk.h | Where-Object { $_.FullName -match '\\km\\' } | Select-Object -First 1
+$kh = Get-ChildItem $dir -Recurse -Filter ntddk.h | Where-Object { $_.FullName -match '\\km\\' } | Select-Object -First 1
 if (-not $kh) { throw 'ntddk.h introuvable (wdk nuget)' }
-$ver = $kh.Directory.Parent.Name
+$wVer = $kh.Directory.Parent.Name
 $wRoot = $kh.Directory.Parent.Parent.Parent.FullName
-$wInc = Join-Path $wRoot "Include\$ver"
-$wLib = Join-Path $wRoot "Lib\$ver\km\x64"
-
-$eh = Get-ChildItem (Join-Path $work 'sdk') -Recurse -Filter excpt.h | Select-Object -First 1
-if (-not $eh) { throw 'excpt.h introuvable (sdk nuget)' }
-$sVer = $eh.Directory.Parent.Name
-$sRoot = $eh.Directory.Parent.Parent.Parent.FullName
-$sInc = Join-Path $sRoot "Include\$sVer"
-$sLib = Join-Path $sRoot "Lib\$sVer\km\x64"
-Write-Host "WDK $ver / SDK $sVer"
+$wInc = Join-Path $wRoot "Include\$wVer"
+$wLib = Join-Path $wRoot "Lib\$wVer\km\x64"
+Write-Host "WDK $wVer"
+if ($wVer -ne $ver) { Write-Host "::warning::WDK $wVer != SDK $ver" }
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $cl = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
@@ -37,6 +46,7 @@ $msvc = Split-Path (Split-Path (Split-Path $cl))
 $incDirs = @((Join-Path $msvc 'include'), (Join-Path $wInc 'km'), (Join-Path $wInc 'shared'),
              (Join-Path $sInc 'ucrt'), (Join-Path $sInc 'shared'), (Join-Path $sInc 'um')) |
            Where-Object { Test-Path $_ }
+foreach ($d in $incDirs) { Write-Host "  /I $d" }
 
 $objs = @()
 foreach ($f in @('main.cpp', 'hde64.c')) {
@@ -48,7 +58,6 @@ foreach ($f in @('main.cpp', 'hde64.c')) {
     foreach ($d in $incDirs) { $l += "/I`"$d`"" }
     $l += "/Fo`"$o`""
     Set-Content $rsp $l -Encoding ASCII
-    Write-Host "--- $f ---"; Get-Content $rsp | ForEach-Object { Write-Host "  $_" }
     & $cl "@$rsp" (Join-Path $here $f)
     if ($LASTEXITCODE -ne 0) { throw "echec compilation $f" }
     $objs += $o
@@ -57,7 +66,7 @@ foreach ($f in @('main.cpp', 'hde64.c')) {
 $lrsp = Join-Path $work 'link.rsp'
 $ll = @('/nologo', '/DRIVER', '/SUBSYSTEM:NATIVE', '/ENTRY:DriverEntry', '/MACHINE:X64', '/NODEFAULTLIB', '/RELEASE',
         "/OUT:`"$here\VnSpoofer.sys`"")
-foreach ($d in @($wLib, $sLib, (Join-Path $msvc 'lib\x64'))) { if (Test-Path $d) { $ll += "/LIBPATH:`"$d`"" } }
+foreach ($d in @($wLib, (Join-Path $sdkRoot "Lib\$ver\km\x64"), (Join-Path $msvc 'lib\x64'))) { if (Test-Path $d) { $ll += "/LIBPATH:`"$d`"" } }
 $ll += $objs; $ll += @('ntoskrnl.lib', 'wdm.lib', 'hal.lib', 'BufferOverflowK.lib')
 Set-Content $lrsp $ll -Encoding ASCII
 & $link "@$lrsp"
