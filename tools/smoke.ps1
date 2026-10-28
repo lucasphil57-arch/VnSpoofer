@@ -19,7 +19,7 @@ public static class D {
 "@
 
 function Open-Dev {
-  $h = [D]::CreateFileW('\\.\VnSpoofer', 0xC0000000, 0, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+  $h = [D]::CreateFileW('\\.\VnSpoofer', [uint32]3221225472, 0, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
   if ($h -eq [IntPtr](-1)) { return $null }
   return $h
 }
@@ -37,7 +37,7 @@ if ($ids.Count -eq 0) { $ids = 0..70 | ForEach-Object { "$_" } }
 $h = $null
 foreach ($id in $ids) {
   Write-Host "--- provider $id"
-  & (Join-Path $work 'kdu.exe') -prv $id -map (Join-Path $work 'VnSpoofer.sys') 2>&1 | Select-Object -Last 2 | ForEach-Object { Write-Host "    $_" }
+  & (Join-Path $work 'kdu.exe') -prv $id -map (Join-Path $work 'VnSpoofer.sys') 2>&1 | Select-Object -Last 6 | ForEach-Object { Write-Host "    $_" }
   $h = Open-Dev
   if ($h) { Write-Host "MAPPE via $id" -ForegroundColor Green; break }
 }
