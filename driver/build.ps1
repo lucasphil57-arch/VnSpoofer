@@ -1,63 +1,65 @@
 ﻿$ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $work = Join-Path $here '.wdk'
+New-Item -ItemType Directory -Force $work | Out-Null
 
-if (-not (Test-Path (Join-Path $work 'pkg'))) {
-    New-Item -ItemType Directory -Force $work | Out-Null
-    $zip = Join-Path $work 'wdk.zip'
-    Invoke-WebRequest 'https://www.nuget.org/api/v2/package/Microsoft.Windows.WDK.x64' -OutFile $zip
-    Expand-Archive $zip -DestinationPath (Join-Path $work 'pkg') -Force
+function Fetch($id, $dir) {
+    if (Test-Path $dir) { return }
+    $zip = Join-Path $work "$id.zip"
+    Invoke-WebRequest "https://www.nuget.org/api/v2/package/$id" -OutFile $zip
+    Expand-Archive $zip -DestinationPath $dir -Force
 }
 
-$inc = Get-ChildItem (Join-Path $work 'pkg') -Recurse -Filter ntddk.h |
-       Where-Object { $_.FullName -match '\\km\\' } | Select-Object -First 1
-if (-not $inc) { throw 'ntddk.h introuvable dans le paquet NuGet' }
-$ver     = $inc.Directory.Parent.Name
-$pkgRoot = $inc.Directory.Parent.Parent.Parent.FullName
-$wdkInc  = Join-Path $pkgRoot "Include\$ver"
-$wdkLib  = Join-Path $pkgRoot "Lib\$ver\km\x64"
-Write-Host "WDK nuget $ver"
+Fetch 'Microsoft.Windows.WDK.x64' (Join-Path $work 'wdk')
+Fetch 'Microsoft.Windows.SDK.CPP.x64' (Join-Path $work 'sdk')
 
-$sdkRoot = 'C:\Program Files (x86)\Windows Kits\10'
-$sdkInc  = Join-Path $sdkRoot "Include\$ver"
-if (-not (Test-Path (Join-Path $sdkInc 'um'))) {
-    $sdkInc = (Get-ChildItem (Join-Path $sdkRoot 'Include') -Directory |
-               Where-Object { Test-Path (Join-Path $_.FullName 'um') } |
-               Sort-Object Name -Descending | Select-Object -First 1).FullName
-}
-Write-Host "SDK $sdkInc"
-$sdkLib = Join-Path $sdkRoot "Lib\$ver\km\x64"
+$kh = Get-ChildItem (Join-Path $work 'wdk') -Recurse -Filter ntddk.h | Where-Object { $_.FullName -match '\\km\\' } | Select-Object -First 1
+if (-not $kh) { throw 'ntddk.h introuvable (wdk nuget)' }
+$ver = $kh.Directory.Parent.Name
+$wRoot = $kh.Directory.Parent.Parent.Parent.FullName
+$wInc = Join-Path $wRoot "Include\$ver"
+$wLib = Join-Path $wRoot "Lib\$ver\km\x64"
+
+$eh = Get-ChildItem (Join-Path $work 'sdk') -Recurse -Filter excpt.h | Select-Object -First 1
+if (-not $eh) { throw 'excpt.h introuvable (sdk nuget)' }
+$sVer = $eh.Directory.Parent.Name
+$sRoot = $eh.Directory.Parent.Parent.Parent.FullName
+$sInc = Join-Path $sRoot "Include\$sVer"
+$sLib = Join-Path $sRoot "Lib\$sVer\km\x64"
+Write-Host "WDK $ver / SDK $sVer"
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $cl = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
 if (-not $cl) { throw 'cl.exe introuvable' }
 $link = Join-Path (Split-Path $cl) 'link.exe'
 $msvc = Split-Path (Split-Path (Split-Path $cl))
-$msvcInc = Join-Path $msvc 'include'
-$msvcLib = Join-Path $msvc 'lib\x64'
 
-# /I et le chemin en DEUX arguments (les chemins contiennent des espaces)
-$incArgs = @()
-foreach ($d in @($msvcInc, (Join-Path $wdkInc 'km'), (Join-Path $wdkInc 'shared'),
-                 (Join-Path $sdkInc 'shared'), (Join-Path $sdkInc 'ucrt'), (Join-Path $sdkInc 'um'))) {
-    if (Test-Path $d) { $incArgs += '/I'; $incArgs += $d }
-}
-$defs = @('/D_AMD64_', '/DAMD64', '/D_WIN64', '/DNT', '/DPOOL_NX_OPTIN=0', '/D_CRT_SECURE_NO_WARNINGS')
+$incDirs = @((Join-Path $msvc 'include'), (Join-Path $wInc 'km'), (Join-Path $wInc 'shared'),
+             (Join-Path $sInc 'ucrt'), (Join-Path $sInc 'shared'), (Join-Path $sInc 'um')) |
+           Where-Object { Test-Path $_ }
 
 $objs = @()
 foreach ($f in @('main.cpp', 'hde64.c')) {
     $o = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($f) + '.obj')
-    $std = if ($f.EndsWith('.cpp')) { @('/std:c++17', '/TP') } else { @('/TC') }
-    Write-Host "cl $f"
-    & $cl /nologo /c /kernel /GS- /Gs9999999 /O2 /Oi @defs @std @incArgs "/Fo$o" (Join-Path $here $f)
+    $rsp = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($f) + '.rsp')
+    $l = @('/nologo', '/c', '/kernel', '/GS-', '/Gs9999999', '/O2', '/Oi',
+           '/D_AMD64_', '/DAMD64', '/D_WIN64', '/DNT', '/DPOOL_NX_OPTIN=0', '/D_CRT_SECURE_NO_WARNINGS')
+    if ($f.EndsWith('.cpp')) { $l += '/std:c++17'; $l += '/TP' } else { $l += '/TC' }
+    foreach ($d in $incDirs) { $l += "/I`"$d`"" }
+    $l += "/Fo`"$o`""
+    Set-Content $rsp $l -Encoding ASCII
+    Write-Host "--- $f ---"; Get-Content $rsp | ForEach-Object { Write-Host "  $_" }
+    & $cl "@$rsp" (Join-Path $here $f)
     if ($LASTEXITCODE -ne 0) { throw "echec compilation $f" }
     $objs += $o
 }
 
-$libArgs = @()
-foreach ($d in @($wdkLib, $sdkLib, $msvcLib)) { if (Test-Path $d) { $libArgs += '/LIBPATH'; $libArgs += $d } }
-
-& $link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /MACHINE:X64 /NODEFAULTLIB /RELEASE `
-      "/OUT:$here\VnSpoofer.sys" @objs @libArgs ntoskrnl.lib wdm.lib hal.lib BufferOverflowK.lib
+$lrsp = Join-Path $work 'link.rsp'
+$ll = @('/nologo', '/DRIVER', '/SUBSYSTEM:NATIVE', '/ENTRY:DriverEntry', '/MACHINE:X64', '/NODEFAULTLIB', '/RELEASE',
+        "/OUT:`"$here\VnSpoofer.sys`"")
+foreach ($d in @($wLib, $sLib, (Join-Path $msvc 'lib\x64'))) { if (Test-Path $d) { $ll += "/LIBPATH:`"$d`"" } }
+$ll += $objs; $ll += @('ntoskrnl.lib', 'wdm.lib', 'hal.lib', 'BufferOverflowK.lib')
+Set-Content $lrsp $ll -Encoding ASCII
+& $link "@$lrsp"
 if ($LASTEXITCODE -ne 0) { throw 'echec link' }
 Write-Host "OK -> $here\VnSpoofer.sys"
