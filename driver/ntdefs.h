@@ -44,14 +44,6 @@ typedef struct _STORAGE_DEVICE_DESCRIPTOR {
     UCHAR   RawDeviceProperties[1];
 } STORAGE_DEVICE_DESCRIPTOR, *PSTORAGE_DEVICE_DESCRIPTOR;
 
-typedef struct _FILE_FS_VOLUME_INFORMATION {
-    LARGE_INTEGER VolumeCreationTime;
-    ULONG         VolumeSerialNumber;
-    ULONG         VolumeLabelLength;
-    BOOLEAN       SupportsObjects;
-    WCHAR         VolumeLabel[1];
-} FILE_FS_VOLUME_INFORMATION, *PFILE_FS_VOLUME_INFORMATION;
-
 extern POBJECT_TYPE *IoDriverObjectType;
 NTSTATUS NTAPI ObReferenceObjectByName(PUNICODE_STRING ObjectName, ULONG Attributes,
     PACCESS_STATE PassedAccessState, ACCESS_MASK DesiredAccess, POBJECT_TYPE ObjectType,
