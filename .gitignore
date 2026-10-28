@@ -12,3 +12,7 @@ driver/*.obj
 tools/.kdu/
 app/res/*.dll
 
+
+out*/
+out/
+
