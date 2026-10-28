@@ -28,7 +28,7 @@ namespace VnSpoofer.Services
             {
                 Uuid = id.ToString("D"),
                 Disk = Rnd(AN, 20),
-                Volume = R.Next(int.MinValue, int.MaxValue).ToString(),
+                Volume = ((uint)R.Next()).ToString(),
                 Mac = BitConverter.ToString(mac).Replace("-", ":"),
                 Guid = Guid.NewGuid().ToString("D"),
                 Board = Rnd(AN, 16),

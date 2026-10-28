@@ -46,7 +46,7 @@ $link = Join-Path (Split-Path $cl) 'link.exe'
 $msvc = Split-Path (Split-Path (Split-Path (Split-Path $cl)))
 
 $incDirs = @((Join-Path $msvc 'include'), (Join-Path $wInc 'km'), (Join-Path $wInc 'shared'),
-             (Join-Path $sInc 'ucrt'), (Join-Path $sInc 'shared'), (Join-Path $sInc 'um')) |
+             (Join-Path $sInc 'ucrt'), (Join-Path $sInc 'shared')) |
            Where-Object { Test-Path $_ }
 foreach ($d in $incDirs) { Write-Host "  /I $d" }
 

@@ -1,10 +1,8 @@
 ﻿// VnSpoofer.sys - spoofer HWID kernel, 100% en memoire
-#include <ntifs.h>
 #include <ntddk.h>
-#include <ntddstor.h>
-#include <ntddndis.h>
 #include <ntstrsafe.h>
 #include <intrin.h>
+#include "ntdefs.h"
 #include "hde64.h"
 
 #define DEV_NAME  L"\\Device\\VnSpoofer"
@@ -172,8 +170,8 @@ static void SmbStr(PUCHAR hdr, PUCHAR end, UCHAR idx, const CHAR* val)
     PUCHAR p = hdr + 4 + hdr[1];
     for (UCHAR i = 1; i <= idx; i++) {
         if (p >= end) return;
-        if (i == idx) { RtlStringCchCopyNA((CHAR*)p, strlen((CHAR*)p) + 1, val, strlen((CHAR*)p)); return; }
-        p += strlen((CHAR*)p) + 1;
+        if (i == idx) { RtlStringCchCopyNA((CHAR*)p, VnStrLenA((CHAR*)p) + 1, val, VnStrLenA((CHAR*)p)); return; }
+        p += VnStrLenA((CHAR*)p) + 1;
     }
 }
 
@@ -205,7 +203,7 @@ static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULON
 
 static NTSTATUS RegSz(PCWSTR path, PCWSTR val, PCWSTR data)
 {
-    return RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, path, val, REG_SZ, (PVOID)data, ((ULONG)wcslen(data) + 1) * sizeof(WCHAR));
+    return RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, path, val, REG_SZ, (PVOID)data, ((ULONG)VnStrLenW(data) + 1) * sizeof(WCHAR));
 }
 
 static NTSTATUS RegRead(PCWSTR path, PCWSTR val, PWSTR out, ULONG cch)
@@ -257,7 +255,13 @@ static NTSTATUS RegCopyVals(HANDLE src, HANDLE dst)
     if (!kv) return STATUS_INSUFFICIENT_RESOURCES;
     for (;; i++) {
         if (!NT_SUCCESS(ZwEnumerateValueKey(src, i, KeyValueFullInformation, kv, sz, &sz))) break;
-        ZwSetValueKey(dst, &kv->Name, 0, kv->Type, (PUCHAR)kv + kv->DataOffset, kv->DataLength);
+        {
+            UNICODE_STRING vn;
+            vn.Buffer = kv->Name;
+            vn.Length = (USHORT)kv->NameLength;
+            vn.MaximumLength = (USHORT)kv->NameLength;
+            ZwSetValueKey(dst, &vn, 0, kv->Type, (PUCHAR)kv + kv->DataOffset, kv->DataLength);
+        }
     }
     ExFreePoolWithTag(kv, 'vpyR');
     return STATUS_SUCCESS;

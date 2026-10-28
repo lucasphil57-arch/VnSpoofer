@@ -13,6 +13,7 @@ jobs:
       - name: KDU
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force app\res | Out-Null
           iwr https://github.com/hfiref0x/KDU/releases/latest/download/kdu.zip -OutFile kdu.zip
           Expand-Archive kdu.zip -DestinationPath kdu -Force
           Copy-Item (Get-ChildItem kdu -Recurse -Filter kdu.exe | Select-Object -First 1).FullName app\res\kdu.exe
