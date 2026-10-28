@@ -47,7 +47,7 @@ static PVOID g_NdiCf;
 static UCHAR g_EnumBuf[600];
 static UCHAR g_EnumBuf2[600];
 
-typedef struct _DETOUR { PVOID Target; PVOID Hook; PUCHAR Tramp; UCHAR Stolen[24]; ULONG Len; BOOLEAN Active; } DETOUR;
+typedef struct _DETOUR { PVOID Target; PVOID Hook; PUCHAR Tramp; UCHAR Stolen[32]; ULONG Len; BOOLEAN Active; } DETOUR;
 static DETOUR g_DtNdi;
 static DETOUR g_DtNqsi;
 
