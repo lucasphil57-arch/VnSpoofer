@@ -47,110 +47,148 @@ static PVOID g_NdiCf;
 static UCHAR g_EnumBuf[600];
 static UCHAR g_EnumBuf2[600];
 
-typedef struct _DETOUR { PVOID Target; PVOID Hook; PUCHAR Tramp; UCHAR Stolen[32]; ULONG Len; BOOLEAN Active; } DETOUR;
-static DETOUR g_DtNdi;
-static DETOUR g_DtNqsi;
+typedef struct _DETOUR {
+    PVOID   Target;
+    PVOID   Hook;
+    PUCHAR  Tramp;
+    UCHAR   Stolen[32];
+    ULONG   Len;
+    ULONG   TrampLen;
+    BOOLEAN Active;
+} DETOUR;
+
+static DETOUR g_DtNdi, g_DtNqsi;
+
+#pragma section(".text$z", read, execute)
+__declspec(allocate(".text$z")) static UCHAR g_TrampPool[4][256];
+static ULONG g_TrampNext = 0;
 
 static KIRQL g_Irql;
 static __forceinline void WpOff() { g_Irql = KeRaiseIrqlToDpcLevel(); __writecr0(__readcr0() & ~0x10000); }
-static __forceinline void WpOn() { __writecr0(__readcr0() | 0x10000); KeLowerIrql(g_Irql); }
+static __forceinline void WpOn()  { __writecr0(__readcr0() | 0x10000); KeLowerIrql(g_Irql); }
 
-static void CopyA(PCHAR dst, ULONG cch, const CHAR* src, ULONG max)
+static BOOLEAN IsKernelPtr(PVOID p)
 {
-    if (!cch) return;
-    ULONG i = 0;
-    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
-    dst[i] = 0;
-}
-
-static void CopyW(PWSTR dst, ULONG cch, PCWSTR src, ULONG max)
-{
-    if (!cch) return;
-    ULONG i = 0;
-    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
-    dst[i] = 0;
-}
-
-static void Append(PWSTR dst, ULONG cch, PCWSTR src)
-{
-    ULONG n = 0, i = 0;
-    while (n + 1 < cch && dst[n]) n++;
-    while (n + 1 < cch && src[i]) { dst[n++] = src[i++]; }
-    dst[n] = 0;
-}
-
-static void AppendN(PWSTR dst, ULONG cch, PCWSTR src, ULONG chars)
-{
-    ULONG n = 0, i = 0;
-    while (n + 1 < cch && dst[n]) n++;
-    while (n + 1 < cch && i < chars && src[i]) { dst[n++] = src[i++]; }
-    dst[n] = 0;
-}
-
-static void NumW(PWSTR dst, ULONG cch, ULONG v)
-{
-    WCHAR t[12];
-    ULONG n = 0, o = 0;
-    if (!v) t[n++] = L'0';
-    while (v) { t[n++] = (WCHAR)(L'0' + (v % 10)); v /= 10; }
-    while (n && o + 1 < cch) dst[o++] = t[--n];
-    dst[o] = 0;
+    ULONG64 v = (ULONG64)p;
+    return (v >= 0xFFFF800000000000ULL);
 }
 
 static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 {
     hde64s hs;
-    ULONG len = 0, off = 0;
-    d->Target = t;
-    d->Hook = h;
-    d->Tramp = (PUCHAR)ExAllocatePoolWithTag(NonPagedPool, 64, 'rtnD');
-    if (!d->Tramp) return STATUS_INSUFFICIENT_RESOURCES;
+    ULONG  len = 0, out = 0, off;
+    PUCHAR src, dst;
+    LONG   nd;
+    ULONGLONG abs;
 
+    if (!d || !t || !h || !IsKernelPtr(t) || !IsKernelPtr(h)) return STATUS_INVALID_PARAMETER;
+    if (g_TrampNext >= 4) return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* suit les thunks jmp rel32 / rel8 jusqu'au corps reel */
+    for (int hop = 0; hop < 4; hop++) {
+        PUCHAR p = (PUCHAR)t;
+        if (p[0] == 0xE9) { t = p + 5 + *(LONG*)(p + 1); if (!IsKernelPtr(t)) return STATUS_UNSUCCESSFUL; continue; }
+        if (p[0] == 0xEB) { t = p + 2 + (LONG)(*(signed char*)(p + 1)); if (!IsKernelPtr(t)) return STATUS_UNSUCCESSFUL; continue; }
+        break;
+    }
+
+    /* 1. mesure des octets a voler (au moins 12 pour mov rax+jmp rax) */
     while (len < 14) {
-        if (!hde64_disasm((PUCHAR)t + len, &hs) || !hs.len) {
-            ExFreePoolWithTag(d->Tramp, 'rtnD');
-            return STATUS_UNSUCCESSFUL;
-        }
-        if (hs.flags & F_ERROR) {
-            ExFreePoolWithTag(d->Tramp, 'rtnD');
-            return STATUS_UNSUCCESSFUL;
-        }
+        if (!hde64_disasm((PUCHAR)t + len, &hs) || hs.len == 0 || hs.len > 15) return STATUS_UNSUCCESSFUL;
         len += hs.len;
-        if (len > 20) break;
+        if (len > 24) return STATUS_UNSUCCESSFUL;
     }
-    if (len < 12 || len > 32) {
-        ExFreePoolWithTag(d->Tramp, 'rtnD');
-        return STATUS_UNSUCCESSFUL;
-    }
-    d->Len = len;
-    RtlCopyMemory(d->Stolen, t, len);
-    RtlCopyMemory(d->Tramp, t, len);
 
+    d->Target   = t;
+    d->Hook     = h;
+    d->Len      = len;
+    d->TrampLen = 0;
+    d->Active   = FALSE;
+    d->Tramp    = g_TrampPool[g_TrampNext++];
+    RtlZeroMemory(d->Tramp, 256);
+    RtlCopyMemory(d->Stolen, t, len);
+
+    /* 2. construction du trampoline, relocalisation par type d'instruction */
+    src = (PUCHAR)t;
+    dst = d->Tramp;
+    off = 0;
     while (off < len) {
-        hde64_disasm(d->Stolen + off, &hs);
-        if (hs.flags & F_RELATIVE) {
-            LONG dsp = (hs.flags & F_DISP32) ? hs.disp.disp32 : (LONG)(signed char)hs.disp.disp8;
-            ULONGLONG abs = (ULONGLONG)((PUCHAR)t + off + hs.len + dsp);
-            LONG nd = (LONG)(abs - (ULONGLONG)(d->Tramp + off + hs.len));
-            if (hs.flags & F_DISP32) *(PLONG)(d->Tramp + off + hs.len - 4) = nd;
-            else *(PCHAR)(d->Tramp + off + hs.len - 1) = (CHAR)nd;
+        UCHAR op;
+        if (!hde64_disasm(src + off, &hs) || hs.len == 0) return STATUS_UNSUCCESSFUL;
+        op = hs.opcode;
+
+        if (op == 0xE9 || op == 0xE8) {
+            abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
+            RtlCopyMemory(dst + out, src + off, hs.len);
+            *(LONG*)(dst + out + hs.len - 4) = nd;
+            out += hs.len;
         }
+        else if (op == 0xEB) {
+            abs = (ULONGLONG)(src + off) + hs.len + (LONG)(*(signed char*)(src + off + 1));
+            nd  = (LONG)(abs - ((ULONGLONG)dst + out + 5));
+            dst[out] = 0xE9;
+            *(LONG*)(dst + out + 1) = nd;
+            out += 5;
+        }
+        else if (op >= 0x70 && op <= 0x7F) {
+            abs = (ULONGLONG)(src + off) + hs.len + (LONG)(*(signed char*)(src + off + 1));
+            nd  = (LONG)(abs - ((ULONGLONG)dst + out + 6));
+            dst[out] = 0x0F;
+            dst[out + 1] = (UCHAR)(0x80 + (op - 0x70));
+            *(LONG*)(dst + out + 2) = nd;
+            out += 6;
+        }
+        else if (op == 0x0F && hs.opcode2 >= 0x80 && hs.opcode2 <= 0x8F) {
+            abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
+            RtlCopyMemory(dst + out, src + off, hs.len);
+            *(LONG*)(dst + out + hs.len - 4) = nd;
+            out += hs.len;
+        }
+        else if ((hs.flags & F_MODRM) && hs.modrm_mod == 0 && hs.modrm_rm == 5 && hs.len >= 5) {
+            abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
+            RtlCopyMemory(dst + out, src + off, hs.len);
+            *(LONG*)(dst + out + hs.len - 4) = nd;
+            out += hs.len;
+        }
+        else {
+            RtlCopyMemory(dst + out, src + off, hs.len);
+            out += hs.len;
+        }
+
+        if (out > 200) return STATUS_UNSUCCESSFUL;
         off += hs.len;
     }
 
-    PUCHAR j = d->Tramp + len;
-    j[0] = 0xFF; j[1] = 0x25;
-    *(PULONG)(j + 2) = 0;
-    *(PVOID*)(j + 6) = (PUCHAR)t + len;
+    /* 3. jmp retour absolu vers t+len */
+    dst[out] = 0xFF;
+    dst[out + 1] = 0x25;
+    *(LONG*)(dst + out + 2) = 0;
+    *(PVOID*)(dst + out + 6) = (PUCHAR)t + len;
+    d->TrampLen = out + 14;
 
+    /* 4. pose du hook : mov rax,hook ; jmp rax ; nop */
     WpOff();
-    PUCHAR p = (PUCHAR)t;
-    p[0] = 0x48; p[1] = 0xB8;
-    *(PVOID*)(p + 2) = h;
-    p[10] = 0xFF; p[11] = 0xE0;
-    for (ULONG i = 12; i < len; i++) p[i] = 0x90;
-    KeMemoryBarrier();
+    {
+        PUCHAR p = (PUCHAR)t;
+        p[0] = 0x48; p[1] = 0xB8;
+        *(PVOID*)(p + 2) = h;
+        p[10] = 0xFF; p[11] = 0xE0;
+        for (ULONG k = 12; k < len; k++) p[k] = 0x90;
+        KeMemoryBarrier();
+    }
     WpOn();
+
+    /* 5. controle que l'ecriture a bien pris (HVCI / WP) */
+    if (((PUCHAR)t)[0] != 0x48 || ((PUCHAR)t)[10] != 0xFF) {
+        WpOff();
+        RtlCopyMemory((PUCHAR)t, d->Stolen, len);
+        KeMemoryBarrier();
+        WpOn();
+        return STATUS_UNSUCCESSFUL;
+    }
 
     d->Active = TRUE;
     return STATUS_SUCCESS;
@@ -158,14 +196,13 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 
 static void DetourRemove(DETOUR* d)
 {
-    if (!d->Active) return;
+    if (!d || !d->Active) return;
     WpOff();
     RtlCopyMemory(d->Target, d->Stolen, d->Len);
+    KeMemoryBarrier();
     WpOn();
-    ExFreePoolWithTag(d->Tramp, 'rtnD');
     d->Active = FALSE;
 }
-
 typedef NTSTATUS (*PFN_DISPATCH)(PDEVICE_OBJECT, PIRP);
 typedef NTSTATUS (*PFN_NDICF)(HANDLE, HANDLE, PIO_APC_ROUTINE, PVOID, PIO_STATUS_BLOCK, ULONG, PVOID, ULONG, PVOID, ULONG);
 typedef NTSTATUS (*PFN_NQSI)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
@@ -518,13 +555,13 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtDeviceIoControlFile");
         g_NdiCf = MmGetSystemRoutineAddress(&n);
-        if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) g_HookMac = TRUE;
+        if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) { g_HookMac = TRUE; g_NdiCf = g_DtNdi.Tramp; }
     }
     if (c->Flags & SPOOF_SMBIOS) {
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtQuerySystemInformation");
         g_Nqsi = MmGetSystemRoutineAddress(&n);
-        if (g_Nqsi && NT_SUCCESS(DetourInstall(&g_DtNqsi, g_Nqsi, (PVOID)HookNqsi))) g_HookSmb = TRUE;
+        if (g_Nqsi && NT_SUCCESS(DetourInstall(&g_DtNqsi, g_Nqsi, (PVOID)HookNqsi))) { g_HookSmb = TRUE; g_Nqsi = g_DtNqsi.Tramp; }
         BiosMirrorApply();
     }
     if (c->Flags & SPOOF_GUID) GuidApply();
