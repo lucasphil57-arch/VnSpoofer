@@ -6,9 +6,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-            - name: Driver
+      - name: Driver
         shell: pwsh
         run: pwsh -File driver\build.ps1
+
       - name: KDU
         shell: pwsh
         run: |
@@ -24,4 +25,3 @@ jobs:
         with:
           name: VnSpoofer
           path: out/VnSpoofer.exe
-
