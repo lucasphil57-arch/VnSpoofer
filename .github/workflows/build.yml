@@ -6,53 +6,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: WDK
+            - name: Driver
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $K = "C:\Program Files (x86)\Windows Kits\10\Include"
-          function Pair($v) {
-            (Test-Path "$K\$v\km\ntddk.h") -and (Test-Path "$K\$v\um\windows.h")
-          }
-
-          # 1) WDK 26100 (SDK 26100 deja present)
-          winget install -e --force --accept-source-agreements --accept-package-agreements --disable-interactivity `
-            --override "/features OptionId.DesktopCPPx64 /quiet /norestart" --id Microsoft.WindowsWDK.10.0.26100
-
-          # 2) repli : WDK 19041 + SDK 19041 (paire coherente)
-          if (-not (Pair '10.0.26100.0')) {
-            Write-Host "::warning::26100 KO, repli paire 19041"
-            winget install -e --force --accept-source-agreements --accept-package-agreements --disable-interactivity `
-              --override "/features OptionId.DesktopCPPx64 /quiet /norestart" --id Microsoft.WindowsSDK.10.0.19041
-            choco install windowsdriverkit10 windows-sdk-10.0 --version=10.0.19041.0 -y --no-progress --ignore-checksums
-          }
-
-          # 3) selection de la version la plus haute dont le couple existe
-          $ok = Get-ChildItem $K -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -like '10.0.*' -and (Pair $_.Name) } |
-                Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $ok) {
-            Get-ChildItem $K -Directory | ForEach-Object {
-              "$($_.Name) km=$(Test-Path "$($_.FullName)\km\ntddk.h") um=$(Test-Path "$($_.FullName)\um\windows.h")"
-            }
-            Write-Host "::error::aucune paire SDK/WDK complete"; exit 1
-          }
-          "WDKVER=$($ok.Name)" | Out-File $env:GITHUB_ENV -Append
-          Write-Host "kit retenu : $($ok.Name)"
-
-      - name: Driver
-        shell: pwsh
-        run: |
-          $msb = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off "/p:TargetPlatformVersion=$env:WDKVER" /m
-
+        run: pwsh -File driver\build.ps1
       - name: KDU
         shell: pwsh
         run: |
           iwr https://github.com/hfiref0x/KDU/releases/latest/download/kdu.zip -OutFile kdu.zip
           Expand-Archive kdu.zip -DestinationPath kdu -Force
           Copy-Item (Get-ChildItem kdu -Recurse -Filter kdu.exe | Select-Object -First 1).FullName app\res\kdu.exe
-          Copy-Item x64\Release\VnSpoofer.sys app\res\VnSpoofer.sys
+          Copy-Item driver\VnSpoofer.sys app\res\VnSpoofer.sys
 
       - name: App
         run: dotnet publish app\VnSpoofer.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o out
@@ -61,3 +24,4 @@ jobs:
         with:
           name: VnSpoofer
           path: out/VnSpoofer.exe
+
