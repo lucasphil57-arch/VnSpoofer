@@ -108,6 +108,35 @@ static void NumW(PWSTR dst, ULONG cch, ULONG v)
     dst[o] = 0;
 }
 
+static NTSTATUS WriteKernelMem(PVOID dst, PVOID src, ULONG len)
+{
+    PMDL  mdl;
+    PVOID map;
+
+    mdl = IoAllocateMdl(dst, len, FALSE, FALSE, NULL);
+    if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
+
+    __try {
+        MmProbeAndLockPages(mdl, KernelMode, IoWriteAccess);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        IoFreeMdl(mdl);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
+    map = ltc1qalrd99hju33uagsf8927k7xfxr423gr93gnjz8(mdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
+    if (!map) {
+        MmUnlockPages(mdl);
+        IoFreeMdl(mdl);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    RtlCopyMemory(map, src, len);
+    MmUnmapLockedPages(map, mdl);
+    MmUnlockPages(mdl);
+    IoFreeMdl(mdl);
+    return STATUS_SUCCESS;
+}
 static BOOLEAN IsKernelPtr(PVOID p)
 {
     ULONG64 v = (ULONG64)p;
@@ -224,22 +253,20 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         if (bad || vc != nins || vl != out) return STATUS_UNSUCCESSFUL;
     }
 
-    WpOff();
     {
-        PUCHAR p = (PUCHAR)t;
-        p[0] = 0x48; p[1] = 0xB8;
-        *(PVOID*)(p + 2) = h;
-        p[10] = 0xFF; p[11] = 0xE0;
-        for (ULONG k = 12; k < len; k++) p[k] = 0x90;
-        KeMemoryBarrier();
+        UCHAR patch[32];
+        patch[0] = 0x48;
+        patch[1] = 0xB8;
+        *(PVOID*)(patch + 2) = h;
+        patch[10] = 0xFF;
+        patch[11] = 0xE0;
+        for (ULONG k = 12; k < len; k++) patch[k] = 0x90;
+        if (!NT_SUCCESS(WriteKernelMem(t, patch, len))) return STATUS_UNSUCCESSFUL;
     }
-    WpOn();
 
     if (((PUCHAR)t)[0] != 0x48 || ((PUCHAR)t)[10] != 0xFF) {
-        WpOff();
-        RtlCopyMemory((PUCHAR)t, d->Stolen, len);
-        KeMemoryBarrier();
-        WpOn();
+        WriteKernelMem((PUCHAR)t, d->Stolen, len);
+
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -249,10 +276,8 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 static void DetourRemove(DETOUR* d)
 {
     if (!d || !d->Active) return;
-    WpOff();
-    RtlCopyMemory(d->Target, d->Stolen, d->Len);
-    KeMemoryBarrier();
-    WpOn();
+    WriteKernelMem(d->Target, d->Stolen, d->Len);
+
     d->Active = FALSE;
 }
 typedef NTSTATUS (*PFN_DISPATCH)(PDEVICE_OBJECT, PIRP);
