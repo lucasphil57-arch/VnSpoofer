@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 
@@ -15,6 +16,19 @@ namespace VnSpoofer.Services
 
         [DllImport("kernel32")]
         public static extern bool CloseHandle(IntPtr h);
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool GetVolumeInformationW(string root, StringBuilder vol, int vsz,
+            out uint serial, out uint maxLen, out uint flags, StringBuilder fs, int fsz);
+
+        public static string VolumeSerial(string root)
+        {
+            var sb = new StringBuilder(32);
+            var fs = new StringBuilder(32);
+            if (GetVolumeInformationW(root, sb, 32, out uint s, out _, out _, fs, 32))
+                return s.ToString("X8");
+            return "";
+        }
 
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);

@@ -16,4 +16,7 @@
     <EmbeddedResource Include="res\kdu.exe" LogicalName="kdu.exe" />
     <EmbeddedResource Include="res\drv64.dll" LogicalName="drv64.dll" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
 </Project>
