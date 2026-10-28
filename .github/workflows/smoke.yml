@@ -1,0 +1,24 @@
+﻿name: smoke
+on: [workflow_dispatch]
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Driver
+        shell: pwsh
+        run: pwsh -File driver\build.ps1
+      - name: KDU
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force app\res | Out-Null
+          pwsh -File tools\build-kdu.ps1
+      - name: Blocklist off
+        shell: pwsh
+        run: |
+          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name VulnerableDriverBlocklistEnable -Value 0 -PropertyType DWord -Force | Out-Null
+      - name: Smoke SMBIOS
+        shell: pwsh
+        env:
+          SMOKE_FLAGS: '4'
+        run: pwsh -File tools\smoke.ps1
