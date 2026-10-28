@@ -30,6 +30,13 @@ namespace VnSpoofer.Services
         IntPtr _h = new IntPtr(-1);
         public bool Mapped => _h != new IntPtr(-1);
 
+        public bool TryOpen()
+        {
+            if (Mapped) return true;
+            _h = Native.CreateFileW(@"\\.\VnSpoofer", 0xC0000000, 0, IntPtr.Zero, 3, 0, IntPtr.Zero);
+            return Mapped;
+        }
+
         static string Dir => Path.Combine(Path.GetTempPath(), "VnSpoofer");
 
         static void Extract(string res, string dst)

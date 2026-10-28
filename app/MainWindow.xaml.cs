@@ -104,7 +104,7 @@ namespace VnSpoofer
 
         async System.Threading.Tasks.Task<bool> EnsureMapped()
         {
-            if (_drv.Mapped) return true;
+            if (_drv.TryOpen()) return true;
             Log("Mapping du driver...", "#F5A623");
             if (await _drv.MapAsync(CmbProvider.SelectedIndex, Log)) return true;
             Log("Mapping echoue : desactive la liste de blocage des pilotes vulnerables puis redemarre.", "#FF5C5C");
@@ -150,8 +150,10 @@ namespace VnSpoofer
                 TxtDashTitle.Text = "Spoof applique";
                 BtnRevert.IsEnabled = true;
                 Log("Spoof applique et identite sauvegardee.", "#33D17A");
+                TxtCountdown.Text = "Spoof actif. Controle ci-contre, puis lance le jeu.";
+                Nav(2);
+                Refresh();
                 if (ChkLaunch.IsChecked == true) _drv.LaunchApex(Log);
-                StartCountdown();
             }
             finally { BtnSpoof.IsEnabled = true; }
         }
@@ -206,7 +208,7 @@ namespace VnSpoofer
             _st = new State();
             _id = Identity.Random();
             Fill();
-            Log("Identite restauree.", "#7C8797");
+            TxtCountdown.Text = "";`n            Log("Identite restauree.", "#7C8797");
             Refresh();
         }
 
