@@ -21,8 +21,10 @@ $dir = Join-Path $work 'wdk'
 if (-not (Test-Path $dir)) {
     $idx = 'https://api.nuget.org/v3-flatcontainer/microsoft.windows.wdk.x64/index.json'
     $all = (Invoke-RestMethod $idx).versions
-    $pick = $all | Where-Object { $_ -like "$ver.*" } | Select-Object -Last 1
-    if (-not $pick) { $pick = $all | Select-Object -Last 1 }
+    $maj = ($ver -split "`.")[0..2] -join "`."
+    Write-Host "recherche WDK $maj.*"
+    $pick = $all | Where-Object { $_ -like "$maj.*" } | Select-Object -Last 1
+    if (-not $pick) { Write-Host "::warning::aucune version $maj, fallback"; $pick = $all | Select-Object -Last 1 }
     Write-Host "WDK nuget $pick"
     $zip = Join-Path $work 'wdk.zip'
     Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/microsoft.windows.wdk.x64/$pick/microsoft.windows.wdk.x64.$pick.nupkg" -OutFile $zip
