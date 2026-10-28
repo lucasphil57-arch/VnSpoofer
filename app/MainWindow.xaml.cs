@@ -40,7 +40,7 @@ namespace VnSpoofer
             LogScroll.ScrollToEnd();
         }
 
-        void Pill(string t, string c, string fg)
+        void SetPill(string t, string c, string fg)
         {
             PillText.Text = t;
             Pill.Background = (Brush)new BrushConverter().ConvertFromString(c);
@@ -72,7 +72,7 @@ namespace VnSpoofer
                     { Log("Mapping echoue : desactive la blocklist / HVCI.", "#FF5C5C"); return; }
                 }
                 if (!_drv.Apply(_id, Flags())) { Log("IOCTL_APPLY echoue.", "#FF5C5C"); return; }
-                Pill("ACTIF", "#33D17A", "#0A0C0F");
+                SetPill("ACTIF", "#33D17A", "#0A0C0F");
                 BtnRevert.IsEnabled = true;
                 Log("Spoof applique.", "#33D17A");
                 if (ChkLaunch.IsChecked == true) _drv.LaunchApex(Log);
@@ -83,7 +83,7 @@ namespace VnSpoofer
         async void Revert_Click(object s, RoutedEventArgs e)
         {
             await _drv.RevertAsync();
-            Pill("INACTIF", "#1E242C", "#7C8797");
+            SetPill("INACTIF", "#1E242C", "#7C8797");
             BtnRevert.IsEnabled = false;
             Log("Identite restauree.", "#7C8797");
         }
