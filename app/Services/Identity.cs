@@ -22,7 +22,7 @@ namespace VnSpoofer.Services
             var mac = new byte[6];
             R.NextBytes(mac);
             mac[0] = (byte)((mac[0] & 0xFC) | 0x02);
-            var id = Guid.NewGuid();
+            var id = System.Guid.NewGuid();
 
             return new Identity
             {
@@ -30,7 +30,7 @@ namespace VnSpoofer.Services
                 Disk = Rnd(AN, 20),
                 Volume = ((uint)R.Next()).ToString(),
                 Mac = BitConverter.ToString(mac).Replace("-", ":"),
-                Guid = Guid.NewGuid().ToString("D"),
+                Guid = System.Guid.NewGuid().ToString("D"),
                 Board = Rnd(AN, 16),
                 Bios = Rnd(AN, 16),
                 Product = Rnd(AN, 16)
