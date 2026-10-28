@@ -111,7 +111,16 @@ static void NumW(PWSTR dst, ULONG cch, ULONG v)
 
 static void DbgDw(PCWSTR name, ULONG v)
 {
-    RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, BK_KEY, name, REG_DWORD, &v, sizeof(v));
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+
+    RtlInitUnicodeString(&u, BK_KEY);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
+    RtlInitUnicodeString(&vn, name);
+    ZwSetValueKey(h, &vn, 0, REG_DWORD, &v, sizeof(v));
+    ZwClose(h);
 }
 static NTSTATUS WriteKernelMem(PVOID dst, PVOID src, ULONG len)
 {
