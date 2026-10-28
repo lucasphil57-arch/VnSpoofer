@@ -124,7 +124,7 @@ static NTSTATUS WriteKernelMem(PVOID dst, PVOID src, ULONG len)
     }
 
     MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
-    map = ltc1qalrd99hju33uagsf8927k7xfxr423gr93gnjz8(mdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
+    map = MmMapLockedPagesSpecifyCache(mdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
     if (!map) {
         MmUnlockPages(mdl);
         IoFreeMdl(mdl);
