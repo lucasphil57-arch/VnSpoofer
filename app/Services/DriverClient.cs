@@ -11,8 +11,8 @@ namespace VnSpoofer.Services
 {
     class DriverClient
     {
-        const uint IOCTL_APPLY = 0x00222000 | 0x800;
-        const uint IOCTL_REVERT = 0x00222000 | 0x801;
+        const uint IOCTL_APPLY = 0x00222000;
+        const uint IOCTL_REVERT = 0x00222004;
 
         [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Ansi)]
         struct Cfg
