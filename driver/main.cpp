@@ -713,22 +713,32 @@ static VOID Unload(PDRIVER_OBJECT d)
 
 static BOOLEAN RegisterSeh(PVOID anchor)
 {
+    typedef BOOLEAN (*PFN_ADDFT)(PVOID, ULONG, ULONG64);
+    UNICODE_STRING un;
+    PFN_ADDFT pAdd;
     ULONG64 p = (ULONG64)anchor & ~0xFFFULL;
-    PIMAGE_DOS_HEADER dos = NULL;
-    PIMAGE_NT_HEADERS nt;
-    PIMAGE_DATA_DIRECTORY dir;
-    int i;
+    LONG  lfanew;
+    ULONG rva, size;
+    int   i;
 
     for (i = 0; i < 1024; i++, p -= 0x1000) {
-        if (*(PUSHORT)p == 0x5A4D) { dos = (PIMAGE_DOS_HEADER)p; break; }
+        if (*(PUSHORT)p == 0x5A4D) break;
     }
-    if (!dos) return FALSE;
-    nt = (PIMAGE_NT_HEADERS)((PUCHAR)dos + dos->e_lfanew);
-    if (nt->Signature != 0x00004550) return FALSE;
-    dir = &nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
-    if (!dir->VirtualAddress || !dir->Size) return FALSE;
-    return RtlAddFunctionTable((PRUNTIME_FUNCTION)((PUCHAR)dos + dir->VirtualAddress),
-                               dir->Size / sizeof(RUNTIME_FUNCTION), (ULONG64)dos);
+    if (i >= 1024) return FALSE;
+
+    lfanew = *(PLONG)(p + 0x3C);
+    if (lfanew <= 0 || lfanew > 0x1000) return FALSE;
+    if (*(PULONG)(p + lfanew) != 0x00004550) return FALSE;
+
+    rva  = *(PULONG)(p + lfanew + 24 + 0x88);
+    size = *(PULONG)(p + lfanew + 24 + 0x8C);
+    if (!rva || size < 12) return FALSE;
+
+    RtlInitUnicodeString(&un, L"RtlAddFunctionTable");
+    pAdd = (PFN_ADDFT)MmGetSystemRoutineAddress(&un);
+    if (!pAdd) return FALSE;
+
+    return pAdd((PVOID)(p + rva), size / 12, p);
 }
 NTSTATUS DriverEntry(PDRIVER_OBJECT drv, PUNICODE_STRING reg)
 {
