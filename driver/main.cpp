@@ -64,6 +64,7 @@ __declspec(allocate(".text$z")) static UCHAR g_TrampPool[4][256];
 static ULONG g_TrampNext = 0;
 
 static KIRQL g_Irql;
+static ULONG g_Step;
 static __forceinline void WpOff() { g_Irql = KeRaiseIrqlToDpcLevel(); __writecr0(__readcr0() & ~0x10000); }
 static __forceinline void WpOn()  { __writecr0(__readcr0() | 0x10000); KeLowerIrql(g_Irql); }
 static void CopyA(PCHAR dst, ULONG cch, const CHAR* src, ULONG max)
@@ -108,6 +109,10 @@ static void NumW(PWSTR dst, ULONG cch, ULONG v)
     dst[o] = 0;
 }
 
+static void DbgDw(PCWSTR name, ULONG v)
+{
+    RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, BK_KEY, name, REG_DWORD, &v, sizeof(v));
+}
 static NTSTATUS WriteKernelMem(PVOID dst, PVOID src, ULONG len)
 {
     PMDL  mdl;
@@ -152,7 +157,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     ULONGLONG abs;
 
     if (!d || !t || !h || !IsKernelPtr(t) || !IsKernelPtr(h)) return STATUS_INVALID_PARAMETER;
-    if (g_TrampNext >= 4) return STATUS_INSUFFICIENT_RESOURCES;
+    if (g_TrampNext >= 4) return STATUS_INSUFFICIENT_RESOURCES; g_Step = 1;
 
     for (int hop = 0; hop < 4; hop++) {
         PUCHAR p = (PUCHAR)t;
@@ -161,14 +166,14 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         break;
     }
 
-    while (len < 14) {
+    g_Step = 2; while (len < 14) {
         if (!hde64_disasm((PUCHAR)t + len, &hs) || hs.len == 0 || hs.len > 15) return STATUS_UNSUCCESSFUL;
         len += hs.len;
         nins++;
         if (nins > 8 || len > 24) return STATUS_UNSUCCESSFUL;
     }
 
-    d->Target   = t;
+    g_Step = 3; d->Target   = t;
     d->Hook     = h;
     d->Len      = len;
     d->TrampLen = 0;
@@ -235,7 +240,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         off += hs.len;
     }
 
-    dst[out] = 0xFF;
+    g_Step = 4; dst[out] = 0xFF;
     dst[out + 1] = 0x25;
     *(LONG*)(dst + out + 2) = 0;
     *(PVOID*)(dst + out + 6) = (PUCHAR)t + len;
@@ -243,7 +248,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 
     {
         ULONG vl = 0, vc = 0, k;
-        BOOLEAN bad = FALSE;
+        BOOLEAN bad = FALSE; g_Step = 5;
         for (k = 0; k < nins; k++) {
             hde64s vs;
             if (!hde64_disasm(dst + vl, &vs) || vs.len == 0) { bad = TRUE; break; }
@@ -255,22 +260,22 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 
     {
         UCHAR patch[32];
-        patch[0] = 0x48;
+        g_Step = 6; patch[0] = 0x48;
         patch[1] = 0xB8;
         *(PVOID*)(patch + 2) = h;
         patch[10] = 0xFF;
         patch[11] = 0xE0;
         for (ULONG k = 12; k < len; k++) patch[k] = 0x90;
-        if (!NT_SUCCESS(WriteKernelMem(t, patch, len))) return STATUS_UNSUCCESSFUL;
+        if (!NT_SUCCESS(WriteKernelMem(t, patch, len))) return STATUS_UNSUCCESSFUL; g_Step = 7;
     }
 
-    if (((PUCHAR)t)[0] != 0x48 || ((PUCHAR)t)[10] != 0xFF) {
+    g_Step = 8; if (((PUCHAR)t)[0] != 0x48 || ((PUCHAR)t)[10] != 0xFF) {
         WriteKernelMem((PUCHAR)t, d->Stolen, len);
 
         return STATUS_UNSUCCESSFUL;
     }
 
-    d->Active = TRUE;
+    g_Step = 9; d->Active = TRUE;
     return STATUS_SUCCESS;
 }
 static void DetourRemove(DETOUR* d)
@@ -652,7 +657,10 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtQuerySystemInformation");
         g_Nqsi = MmGetSystemRoutineAddress(&n);
-        if (g_Nqsi && NT_SUCCESS(DetourInstall(&g_DtNqsi, g_Nqsi, (PVOID)HookNqsi))) { g_HookSmb = TRUE; g_Nqsi = g_DtNqsi.Tramp; }
+        { NTSTATUS ds = g_Nqsi ? DetourInstall(&g_DtNqsi, g_Nqsi, (PVOID)HookNqsi) : STATUS_NOT_FOUND;
+            DbgDw(L"SmbStatus", (ULONG)ds); DbgDw(L"SmbStep", g_Step);
+            if (g_DtNqsi.Target) { PULONG q = (PULONG)g_DtNqsi.Target; DbgDw(L"SmbT0", q[0]); DbgDw(L"SmbT1", q[1]); DbgDw(L"SmbT2", q[2]); DbgDw(L"SmbT3", q[3]); }
+            if (NT_SUCCESS(ds)) { g_HookSmb = TRUE; g_Nqsi = g_DtNqsi.Tramp; } }
         BiosMirrorApply();
     }
     if (c->Flags & SPOOF_GUID) GuidApply();
