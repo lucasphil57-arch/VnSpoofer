@@ -69,8 +69,16 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
             ExFreePoolWithTag(d->Tramp, 'rtnD');
             return STATUS_UNSUCCESSFUL;
         }
+        if (hs.flags & F_ERROR) {
+            ExFreePoolWithTag(d->Tramp, 'rtnD');
+            return STATUS_UNSUCCESSFUL;
+        }
         len += hs.len;
         if (len > 20) break;
+    }
+    if (len < 12 || len > 32) {
+        ExFreePoolWithTag(d->Tramp, 'rtnD');
+        return STATUS_UNSUCCESSFUL;
     }
     d->Len = len;
     RtlCopyMemory(d->Stolen, t, len);
@@ -97,6 +105,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     *(PVOID*)(p + 2) = h;
     p[10] = 0xFF; p[11] = 0xE0;
     for (ULONG i = 12; i < len; i++) p[i] = 0x90;
+    KeMemoryBarrier();
     WpOn();
 
     d->Active = TRUE;
@@ -174,8 +183,11 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
     if (NT_SUCCESS(irp->IoStatus.Status)) {
-        PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)irp->AssociatedIrp.SystemBuffer;
-        if (v) v->VolumeSerialNumber = g_Cfg.VolumeSerial;
+        PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
+        if (sp->Parameters.DeviceIoControl.OutputBufferLength >= 12) {
+            PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)irp->AssociatedIrp.SystemBuffer;
+            if (v) v->VolumeSerialNumber = g_Cfg.VolumeSerial;
+        }
     }
     return STATUS_SUCCESS;
 }
