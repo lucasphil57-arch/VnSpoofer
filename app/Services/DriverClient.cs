@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -55,41 +56,48 @@ namespace VnSpoofer.Services
             Extract("kdu.exe", kdu);
             Extract("drv64.dll", Path.Combine(Dir, "drv64.dll"));
 
-            var providers = new System.Collections.Generic.List<string>();
+            if (TryOpen()) { log("device deja present", "#33D17A"); return true; }
+
+            var ids = new List<string>();
+            string csv = Path.Combine(Dir, "prov.csv");
             try
             {
-                var lp = Process.Start(new ProcessStartInfo(kdu, "-list")
-                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true });
-                string outp = await lp.StandardOutput.ReadToEndAsync();
+                var lp = Process.Start(new ProcessStartInfo(kdu, $"-listcsv \"{csv}\"")
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, WorkingDirectory = Dir });
                 await lp.WaitForExitAsync();
-                foreach (System.Text.RegularExpressions.Match m in
-                         System.Text.RegularExpressions.Regex.Matches(outp, @"^\s*\[?(\d{1,3})\]?", System.Text.RegularExpressions.RegexOptions.Multiline))
-                    if (!providers.Contains(m.Groups[1].Value)) providers.Add(m.Groups[1].Value);
+                if (File.Exists(csv))
+                {
+                    foreach (var line in File.ReadAllLines(csv))
+                    {
+                        var tok = line.Split(new[] { ',', ';' })[0].Trim().Trim('"');
+                        if (int.TryParse(tok, out int id) && id >= 0 && id < 100 && !ids.Contains(tok)) ids.Add(tok);
+                    }
+                }
             }
             catch { }
 
-            if (providerIndex > 0 && providerIndex - 1 < providers.Count)
-                providers = new System.Collections.Generic.List<string> { providers[providerIndex - 1] };
+            if (ids.Count == 0) { for (int i = 0; i < 71; i++) ids.Add(i.ToString()); }
+            log($"{ids.Count} providers a essayer", "#7C8797");
 
-            foreach (var p in providers)
+            string last = "";
+            foreach (var id in ids)
             {
-                log($"tentative provider {p}", "#7C8797");
+                log($"tentative provider {id}", "#7C8797");
                 try
                 {
-                    var mp = Process.Start(new ProcessStartInfo(kdu, $"-map \"{sys}\" -provider {p}")
-                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true });
+                    var mp = Process.Start(new ProcessStartInfo(kdu, $"-prv {id} -map \"{sys}\"")
+                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, WorkingDirectory = Dir });
+                    last = await mp.StandardOutput.ReadToEndAsync();
                     await mp.WaitForExitAsync();
-                    if (mp.ExitCode == 0)
-                    {
-                        _h = Native.CreateFileW(@"\\.\VnSpoofer", 0xC0000000, 0, IntPtr.Zero, 3, 0, IntPtr.Zero);
-                        if (Mapped) { log($"driver mappe via provider {p}", "#33D17A"); return true; }
-                    }
+                    if (TryOpen()) { log($"driver mappe via provider {id}", "#33D17A"); return true; }
                 }
                 catch { }
             }
+
+            if (last.Length > 400) last = last.Substring(last.Length - 400);
+            log(last.Replace("\r\n", " | "), "#5E6A7C");
             return false;
         }
-
         static byte[] Pack(Identity id)
         {
             var c = new Cfg
