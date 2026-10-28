@@ -1,5 +1,6 @@
 ﻿// VnSpoofer.sys - spoofer HWID kernel, 100% en memoire
 #include <ntddk.h>
+#define NTSTRSAFE_LIB
 #include <ntstrsafe.h>
 #include <intrin.h>
 #include "ntdefs.h"
@@ -118,22 +119,30 @@ typedef NTSTATUS (*PFN_NQSI)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
 
 static PFN_DISPATCH g_OrigDisk;
 static PFN_DISPATCH g_OrigVol;
+static PDRIVER_OBJECT g_DrvDisk;
+static PDRIVER_OBJECT g_DrvVol;
 static BOOLEAN g_HookDisk, g_HookVol, g_HookMac, g_HookSmb, g_HookGpu;
 
-static NTSTATUS HookDrv(PCWSTR name, ULONG major, PVOID nf, PVOID* of)
+static PDRIVER_OBJECT DrvOfVolume(PCWSTR name)
 {
-    UNICODE_STRING n;
-    PDRIVER_OBJECT d = NULL;
-    RtlInitUnicodeString(&n, name);
-    NTSTATUS st = ObReferenceObjectByName(&n, OBJ_CASE_INSENSITIVE, NULL, 0,
-                                          *IoDriverObjectType, KernelMode, NULL, (PVOID*)&d);
-    if (!NT_SUCCESS(st)) return st;
-    *of = (PVOID)d->MajorFunction[major];
-    d->MajorFunction[major] = (PDRIVER_DISPATCH)nf;
-    ObDereferenceObject(d);
-    return STATUS_SUCCESS;
+    UNICODE_STRING u;
+    RtlInitUnicodeString(&u, name);
+    PFILE_OBJECT fo = NULL;
+    PDEVICE_OBJECT dev = NULL;
+    if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return NULL;
+    while (dev->AttachedDevice) dev = dev->AttachedDevice;
+    PDRIVER_OBJECT d = dev->DriverObject;
+    ObDereferenceObject(fo);
+    return d;
 }
 
+static NTSTATUS HookDrv(PDRIVER_OBJECT d, ULONG major, PVOID nf, PVOID* of)
+{
+    if (!d) return STATUS_UNSUCCESSFUL;
+    *of = (PVOID)d->MajorFunction[major];
+    d->MajorFunction[major] = (PDRIVER_DISPATCH)nf;
+    return STATUS_SUCCESS;
+}
 static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
@@ -433,13 +442,21 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
     if (g_Applied) return STATUS_ALREADY_REGISTERED;
     RtlCopyMemory(&g_Cfg, c, sizeof(SPOOF_CFG));
 
-    if (c->Flags & SPOOF_DISK)
-        if (NT_SUCCESS(HookDrv(L"\\Driver\\disk", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, (PVOID*)&g_OrigDisk)))
+    if (c->Flags & SPOOF_DISK) {
+        g_DrvDisk = DrvOfVolume(L"\\Device\\Harddisk0\\DR0");
+        if (NT_SUCCESS(HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, (PVOID*)&g_OrigDisk)))
             g_HookDisk = TRUE;
+    }
 
-    if (c->Flags & SPOOF_VOLUME)
-        if (NT_SUCCESS(HookDrv(L"\\FileSystem\\Ntfs", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol)))
+    if (c->Flags & SPOOF_VOLUME) {
+        for (int vi = 1; vi <= 4 && !g_DrvVol; vi++) {
+            WCHAR vn[40];
+            RtlStringCchPrintfW(vn, 40, L"\\Device\\HarddiskVolume%d", vi);
+            g_DrvVol = DrvOfVolume(vn);
+        }
+        if (NT_SUCCESS(HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol)))
             g_HookVol = TRUE;
+    }
 
     if (c->Flags & SPOOF_MAC) {
         UNICODE_STRING n;
@@ -467,13 +484,12 @@ static NTSTATUS DoRevert()
     if (g_HookGpu) GpuRevert();
     if (g_HookSmb) { DetourRemove(&g_DtNqsi); g_HookSmb = FALSE; }
     if (g_HookMac) { DetourRemove(&g_DtNdi); g_HookMac = FALSE; }
-    if (g_HookVol) { HookDrv(L"\\FileSystem\\Ntfs", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)g_OrigVol, (PVOID*)&g_OrigVol); g_HookVol = FALSE; }
-    if (g_HookDisk) { HookDrv(L"\\Driver\\disk", IRP_MJ_DEVICE_CONTROL, (PVOID)g_OrigDisk, (PVOID*)&g_OrigDisk); g_HookDisk = FALSE; }
+    if (g_HookVol) { HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)g_OrigVol, (PVOID*)&g_OrigVol); g_HookVol = FALSE; }
+    if (g_HookDisk) { HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)g_OrigDisk, (PVOID*)&g_OrigDisk); g_HookDisk = FALSE; }
     if (g_Cfg.Flags & SPOOF_GUID) GuidRevert();
     g_Applied = FALSE;
     return STATUS_SUCCESS;
 }
-
 static NTSTATUS Dispatch(PDEVICE_OBJECT dev, PIRP irp)
 {
     UNREFERENCED_PARAMETER(dev);

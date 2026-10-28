@@ -69,7 +69,7 @@ $lrsp = Join-Path $work 'link.rsp'
 $ll = @('/nologo', '/DRIVER', '/SUBSYSTEM:NATIVE', '/ENTRY:DriverEntry', '/MACHINE:X64', '/NODEFAULTLIB', '/RELEASE',
         "/OUT:`"$here\VnSpoofer.sys`"")
 foreach ($d in @($wLib, (Join-Path $sdkRoot "Lib\$ver\km\x64"), (Join-Path $msvc 'lib\x64'))) { if (Test-Path $d) { $ll += "/LIBPATH:`"$d`"" } }
-$ll += $objs; $ll += @('ntoskrnl.lib', 'wdm.lib', 'hal.lib', 'BufferOverflowK.lib')
+$ll += $objs; $ll += @('ntoskrnl.lib', 'wdm.lib', 'hal.lib', 'BufferOverflowK.lib', 'ntstrsafe.lib')
 Set-Content $lrsp $ll -Encoding ASCII
 & $link "@$lrsp"
 if ($LASTEXITCODE -ne 0) { throw 'echec link' }
