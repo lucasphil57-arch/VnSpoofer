@@ -10,20 +10,35 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $pat = "C:\Program Files (x86)\Windows Kits\10\Include\10.0.*\km\ntddk.h"
-
-          winget configure -f "https://raw.githubusercontent.com/microsoft/Windows-driver-samples/main/_wdk_utils/winget/configs/wdk-vsenterprise.dsc.yaml" --accept-configuration-agreements --disable-interactivity
-
-          if (-not (Get-ChildItem $pat -ErrorAction SilentlyContinue)) {
-            Write-Host "::warning::configure KO, repli chocolatey"
-            choco install windowsdriverkit10 -y --no-progress --ignore-checksums
+          $K = "C:\Program Files (x86)\Windows Kits\10\Include"
+          function Pair($v) {
+            (Test-Path "$K\$v\km\ntddk.h") -and (Test-Path "$K\$v\um\windows.h")
           }
 
-          $h = Get-ChildItem $pat -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $h) { Write-Host "::error::WDK absent"; exit 1 }
-          $v = $h.Directory.Parent.Name
-          "WDKVER=$v" | Out-File $env:GITHUB_ENV -Append
-          Write-Host "WDK $v pret"
+          # 1) WDK 26100 (SDK 26100 deja present)
+          winget install -e --force --accept-source-agreements --accept-package-agreements --disable-interactivity `
+            --override "/features OptionId.DesktopCPPx64 /quiet /norestart" --id Microsoft.WindowsWDK.10.0.26100
+
+          # 2) repli : WDK 19041 + SDK 19041 (paire coherente)
+          if (-not (Pair '10.0.26100.0')) {
+            Write-Host "::warning::26100 KO, repli paire 19041"
+            winget install -e --force --accept-source-agreements --accept-package-agreements --disable-interactivity `
+              --override "/features OptionId.DesktopCPPx64 /quiet /norestart" --id Microsoft.WindowsSDK.10.0.19041
+            choco install windowsdriverkit10 windows-sdk-10.0 --version=10.0.19041.0 -y --no-progress --ignore-checksums
+          }
+
+          # 3) selection de la version la plus haute dont le couple existe
+          $ok = Get-ChildItem $K -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like '10.0.*' -and (Pair $_.Name) } |
+                Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $ok) {
+            Get-ChildItem $K -Directory | ForEach-Object {
+              "$($_.Name) km=$(Test-Path "$($_.FullName)\km\ntddk.h") um=$(Test-Path "$($_.FullName)\um\windows.h")"
+            }
+            Write-Host "::error::aucune paire SDK/WDK complete"; exit 1
+          }
+          "WDKVER=$($ok.Name)" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "kit retenu : $($ok.Name)"
 
       - name: Driver
         shell: pwsh
