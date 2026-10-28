@@ -158,6 +158,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 
         if (op == 0xE9 || op == 0xE8) {
             abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            if (!IsKernelPtr((PVOID)abs)) return STATUS_UNSUCCESSFUL;
             nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
             RtlCopyMemory(dst + out, src + off, hs.len);
             *(LONG*)(dst + out + hs.len - 4) = nd;
@@ -165,6 +166,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         }
         else if (op == 0xEB) {
             abs = (ULONGLONG)(src + off) + hs.len + (LONG)(*(signed char*)(src + off + 1));
+            if (!IsKernelPtr((PVOID)abs)) return STATUS_UNSUCCESSFUL;
             nd  = (LONG)(abs - ((ULONGLONG)dst + out + 5));
             dst[out] = 0xE9;
             *(LONG*)(dst + out + 1) = nd;
@@ -172,6 +174,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         }
         else if (op >= 0x70 && op <= 0x7F) {
             abs = (ULONGLONG)(src + off) + hs.len + (LONG)(*(signed char*)(src + off + 1));
+            if (!IsKernelPtr((PVOID)abs)) return STATUS_UNSUCCESSFUL;
             nd  = (LONG)(abs - ((ULONGLONG)dst + out + 6));
             dst[out] = 0x0F;
             dst[out + 1] = (UCHAR)(0x80 + (op - 0x70));
@@ -180,6 +183,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         }
         else if (op == 0x0F && hs.opcode2 >= 0x80 && hs.opcode2 <= 0x8F) {
             abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            if (!IsKernelPtr((PVOID)abs)) return STATUS_UNSUCCESSFUL;
             nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
             RtlCopyMemory(dst + out, src + off, hs.len);
             *(LONG*)(dst + out + hs.len - 4) = nd;
@@ -187,6 +191,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         }
         else if ((hs.flags & F_MODRM) && hs.modrm_mod == 0 && hs.modrm_rm == 5 && hs.len >= 5) {
             abs = (ULONGLONG)(src + off) + hs.len + *(LONG*)(src + off + hs.len - 4);
+            if (!IsKernelPtr((PVOID)abs)) return STATUS_UNSUCCESSFUL;
             nd  = (LONG)(abs - ((ULONGLONG)dst + out + hs.len));
             RtlCopyMemory(dst + out, src + off, hs.len);
             *(LONG*)(dst + out + hs.len - 4) = nd;
