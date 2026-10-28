@@ -5,15 +5,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: WDK
         shell: pwsh
         run: |
-          $i = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $p = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-          & $i modify --installPath $p --add Microsoft.VisualStudio.Workload.WindowsDriver --quiet --norestart
-          & $i modify --installPath $p --add Microsoft.VisualStudio.Workload.VCTools --quiet --norestart
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $inst = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          & $inst modify --installPath $vs --add Microsoft.VisualStudio.Workload.WindowsDriver --includeRecommended --quiet --norestart
+          if (-not (Test-Path "C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets")) {
+            Write-Host "::error::WDK introuvable"; exit 1
+          }
+          "VS=$vs" | Out-File $env:GITHUB_ENV -Append
+
       - name: Driver
-        run: msbuild driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64
+        shell: pwsh
+        run: |
+          $msb = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /m
+
       - name: KDU
         shell: pwsh
         run: |
@@ -21,8 +31,10 @@ jobs:
           Expand-Archive kdu.zip -DestinationPath kdu -Force
           Copy-Item (Get-ChildItem kdu -Recurse -Filter kdu.exe | Select-Object -First 1).FullName app\res\kdu.exe
           Copy-Item x64\Release\VnSpoofer.sys app\res\VnSpoofer.sys
+
       - name: App
         run: dotnet publish app\VnSpoofer.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o out
+
       - uses: actions/upload-artifact@v4
         with:
           name: VnSpoofer

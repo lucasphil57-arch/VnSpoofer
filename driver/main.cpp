@@ -108,7 +108,7 @@ static NTSTATUS HookDrv(PCWSTR name, ULONG major, PVOID nf, PVOID* of)
     NTSTATUS st = ObReferenceObjectByName(&n, OBJ_CASE_INSENSITIVE, NULL, 0, *IoDriverObjectType, KernelMode, NULL, (PVOID*)&d);
     if (!NT_SUCCESS(st)) return st;
     *of = d->MajorFunction[major];
-    d->MajorFunction[major] = nf;
+    d->MajorFunction[major] = (PDRIVER_DISPATCH)nf;
     ObDereferenceObject(d);
     return STATUS_SUCCESS;
 }
@@ -119,9 +119,9 @@ static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
     if (sp->Parameters.DeviceIoControl.IoControlCode != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
-    PSTORAGE_PROPERTY_QUERY q = irp->AssociatedIrp.SystemBuffer;
+    PSTORAGE_PROPERTY_QUERY q = (PSTORAGE_PROPERTY_QUERY)irp->AssociatedIrp.SystemBuffer;
     if (!q || q->PropertyId != StorageDeviceProperty || q->QueryType != PropertyStandardQuery) return STATUS_SUCCESS;
-    PSTORAGE_DEVICE_DESCRIPTOR dd = irp->AssociatedIrp.SystemBuffer;
+    PSTORAGE_DEVICE_DESCRIPTOR dd = (PSTORAGE_DEVICE_DESCRIPTOR)irp->AssociatedIrp.SystemBuffer;
     ULONG out = sp->Parameters.DeviceIoControl.OutputBufferLength;
     if (dd->SerialNumberOffset && dd->SerialNumberOffset < out)
         RtlStringCchCopyNA((PCHAR)dd + dd->SerialNumberOffset, out - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
@@ -142,7 +142,7 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
     if (NT_SUCCESS(irp->IoStatus.Status)) {
-        PFILE_FS_VOLUME_INFORMATION v = irp->AssociatedIrp.SystemBuffer;
+        PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)irp->AssociatedIrp.SystemBuffer;
         if (v) v->VolumeSerialNumber = g_Cfg.VolumeSerial;
     }
     return STATUS_SUCCESS;
@@ -197,7 +197,7 @@ static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULON
 {
     NTSTATUS st = ((PFN_NQSI)g_Nqsi)(c, buf, len, ret);
     if (NT_SUCCESS(st) && c == SystemFirmwareTableInformation && buf) {
-        PSFTI fi = buf;
+        PSFTI fi = (PSFTI)buf;
         if (fi->ProviderSignature == 'RSMB' && fi->TableBufferLength) PatchSmbios(fi);
     }
     return st;
@@ -298,8 +298,9 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
         if (ph2) { RegCopyVals(ph, ph2); ZwClose(ph2); }
         ZwDeleteKey(ph); ZwClose(ph);
     }
-    ZwClose(th); ZwClose(sh);
+    ZwClose(th);
     ZwDeleteKey(sh);
+    ZwClose(sh);
     return STATUS_SUCCESS;
 }
 
@@ -313,11 +314,13 @@ static NTSTATUS GpuApply()
     WCHAR tmp[700], dst[720], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
-        if (wcsncmp(kb->Name.Buffer, L"VEN_", 4)) continue;
+        if (kb->Name.Length < 8 || kb->Name.Buffer[0] != L'V' || kb->Name.Buffer[1] != L'E' || kb->Name.Buffer[2] != L'N' || kb->Name.Buffer[3] != L'_') continue;
 
         RtlStringCchPrintfW(tmp, 700, L"%s\\%wZ", base, &kb->Name);
         WCHAR cls[64] = {0};
-        if (!NT_SUCCESS(RegRead(tmp, L"ClassGUID", cls, 64)) || _wcsicmp(cls, GPU_CLASS)) continue;
+        if (!NT_SUCCESS(RegRead(tmp, L"ClassGUID", cls, 64))) continue;
+        { UNICODE_STRING ua, ub; RtlInitUnicodeString(&ua, cls); RtlInitUnicodeString(&ub, GPU_CLASS);
+          if (!RtlEqualUnicodeString(&ua, &ub, TRUE)) continue; }
 
         HANDLE dh = OpenAbs(tmp, KEY_ENUMERATE_SUB_KEYS, NULL);
         if (!dh) continue;
