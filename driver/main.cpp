@@ -56,7 +56,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 {
     hde64s hs; ULONG len = 0, off = 0;
     d->Target = t; d->Hook = h;
-    d->Tramp = ExAllocatePoolWithTag(NonPagedPool, 64, 'rtnD');
+    d->Tramp = (PUCHAR)ExAllocatePoolWithTag(NonPagedPool, 64, 'rtnD');
     if (!d->Tramp) return STATUS_INSUFFICIENT_RESOURCES;
     while (len < 14) {
         if (!hde64_disasm((PUCHAR)t + len, &hs) || !hs.len) return STATUS_UNSUCCESSFUL;
@@ -70,7 +70,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         hde64_disasm(d->Stolen + off, &hs);
         if (hs.flags & F_RELATIVE) {
             ULONGLONG abs = (ULONGLONG)((PUCHAR)t + off + hs.len + hs.disp.disp32);
-            *(PLONG)(d->Tramp + off + hs.disp.disp_offset) = (LONG)(abs - (ULONGLONG)(d->Tramp + off + hs.len));
+            *(PLONG)(d->Tramp + off + (ULONG)FIELD_OFFSET(hde64s, disp)) = (LONG)(abs - (ULONGLONG)(d->Tramp + off + hs.len));
         }
         off += hs.len;
     }
@@ -251,7 +251,7 @@ static NTSTATUS RegCopyVals(HANDLE src, HANDLE dst)
     ULONG sz = 0, i = 0;
     ZwEnumerateValueKey(src, 0, KeyValueFullInformation, NULL, 0, &sz);
     if (!sz) return STATUS_SUCCESS;
-    PKEY_VALUE_FULL_INFORMATION kv = ExAllocatePoolWithTag(NonPagedPool, sz, 'vpyR');
+    PKEY_VALUE_FULL_INFORMATION kv = (PKEY_VALUE_FULL_INFORMATION)ExAllocatePoolWithTag(NonPagedPool, sz, 'vpyR');
     if (!kv) return STATUS_INSUFFICIENT_RESOURCES;
     for (;; i++) {
         if (!NT_SUCCESS(ZwEnumerateValueKey(src, i, KeyValueFullInformation, kv, sz, &sz))) break;
