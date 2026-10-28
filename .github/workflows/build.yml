@@ -6,23 +6,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: WDK
+      - name: SDK + WDK
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -products * -property installationPath
-          $inst = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          & $inst modify --installPath $vs --add Microsoft.VisualStudio.Workload.WindowsDriver --includeRecommended --quiet --norestart
-          if (-not (Test-Path "C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets")) {
-            Write-Host "::error::WDK introuvable"; exit 1
-          }
-          "VS=$vs" | Out-File $env:GITHUB_ENV -Append
+          $w = "winget install -e --accept-source-agreements --accept-package-agreements --disable-interactivity --override `"/features OptionId.DesktopCPPx64 /quiet /norestart`""
+          Invoke-Expression "$w --id Microsoft.WindowsSDK.10.0.26100"
+          Invoke-Expression "$w --id Microsoft.WindowsWDK.10.0.26100"
+          $t = "C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets"
+          $h = "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\ntddk.h"
+          if (-not (Test-Path $t)) { Write-Host "::error::WDK targets absents"; exit 1 }
+          if (-not (Test-Path $h)) { Write-Host "::error::WDK headers absents"; exit 1 }
+          Write-Host "WDK OK"
 
       - name: Driver
         shell: pwsh
         run: |
           $msb = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /m
+          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:TargetPlatformVersion=10.0.26100.0 /m
 
       - name: KDU
         shell: pwsh
