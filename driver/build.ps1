@@ -55,7 +55,7 @@ foreach ($f in @('main.cpp', 'hde64.c')) {
     $o = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($f) + '.obj')
     $rsp = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($f) + '.rsp')
     $l = @('/nologo', '/c', '/kernel', '/GS-', '/Gs9999999', '/O2', '/Oi',
-           '/D_AMD64_', '/DAMD64', '/D_WIN64', '/DNT', '/DPOOL_NX_OPTIN=0', '/D_CRT_SECURE_NO_WARNINGS')
+           '/D_AMD64_', '/DAMD64', '/D_WIN64', '/DNT', '/DPOOL_NX_OPTIN=0', '/D_CRT_SECURE_NO_WARNINGS', '/D_WIN32_WINNT=0x0A00', '/DWINVER=0x0A00', '/DNTDDI_VERSION=0x0A00000C')
     if ($f.EndsWith('.cpp')) { $l += '/std:c++17'; $l += '/TP' } else { $l += '/TC' }
     foreach ($d in $incDirs) { $l += "/I`"$d`"" }
     $l += "/Fo`"$o`""
