@@ -55,6 +55,48 @@ static KIRQL g_Irql;
 static __forceinline void WpOff() { g_Irql = KeRaiseIrqlToDpcLevel(); __writecr0(__readcr0() & ~0x10000); }
 static __forceinline void WpOn() { __writecr0(__readcr0() | 0x10000); KeLowerIrql(g_Irql); }
 
+static void CopyA(PCHAR dst, ULONG cch, const CHAR* src, ULONG max)
+{
+    if (!cch) return;
+    ULONG i = 0;
+    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
+    dst[i] = 0;
+}
+
+static void CopyW(PWSTR dst, ULONG cch, PCWSTR src, ULONG max)
+{
+    if (!cch) return;
+    ULONG i = 0;
+    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
+    dst[i] = 0;
+}
+
+static void Append(PWSTR dst, ULONG cch, PCWSTR src)
+{
+    ULONG n = 0, i = 0;
+    while (n + 1 < cch && dst[n]) n++;
+    while (n + 1 < cch && src[i]) { dst[n++] = src[i++]; }
+    dst[n] = 0;
+}
+
+static void AppendN(PWSTR dst, ULONG cch, PCWSTR src, ULONG chars)
+{
+    ULONG n = 0, i = 0;
+    while (n + 1 < cch && dst[n]) n++;
+    while (n + 1 < cch && i < chars && src[i]) { dst[n++] = src[i++]; }
+    dst[n] = 0;
+}
+
+static void NumW(PWSTR dst, ULONG cch, ULONG v)
+{
+    WCHAR t[12];
+    ULONG n = 0, o = 0;
+    if (!v) t[n++] = L'0';
+    while (v) { t[n++] = (WCHAR)(L'0' + (v % 10)); v /= 10; }
+    while (n && o + 1 < cch) dst[o++] = t[--n];
+    dst[o] = 0;
+}
+
 static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 {
     hde64s hs;
@@ -167,7 +209,7 @@ static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
     PSTORAGE_DEVICE_DESCRIPTOR dd = (PSTORAGE_DEVICE_DESCRIPTOR)irp->AssociatedIrp.SystemBuffer;
     ULONG out = sp->Parameters.DeviceIoControl.OutputBufferLength;
     if (dd->SerialNumberOffset && dd->SerialNumberOffset < out)
-        RtlStringCchCopyNA((PCHAR)dd + dd->SerialNumberOffset, out - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
+        CopyA((PCHAR)dd + dd->SerialNumberOffset, out - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
     return STATUS_SUCCESS;
 }
 
@@ -222,7 +264,7 @@ static void SmbStr(PUCHAR hdr, PUCHAR end, UCHAR idx, const CHAR* val)
     for (UCHAR i = 1; i <= idx; i++) {
         if (p >= end) return;
         if (i == idx) {
-            RtlStringCchCopyNA((CHAR*)p, VnStrLenA((CHAR*)p) + 1, val, VnStrLenA((CHAR*)p));
+            CopyA((CHAR*)p, VnStrLenA((CHAR*)p) + 1, val, VnStrLenA((CHAR*)p));
             return;
         }
         p += VnStrLenA((CHAR*)p) + 1;
@@ -401,7 +443,7 @@ static NTSTATUS GpuApply()
         kn.Buffer = kb->Name;
         kn.Length = (USHORT)kb->NameLength;
         kn.MaximumLength = (USHORT)kb->NameLength;
-        RtlStringCchPrintfW(tmp, 700, L"%s\\%wZ", base, &kn);
+        Append(tmp, 700, base); Append(tmp, 700, L"\\"); AppendN(tmp, 700, kn.Buffer, kn.Length / 2);
         WCHAR cls[64] = {0};
         if (!NT_SUCCESS(RegRead(tmp, L"ClassGUID", cls, 64))) continue;
         {
@@ -422,10 +464,10 @@ static NTSTATUS GpuApply()
             in2.Buffer = ib->Name;
             in2.Length = (USHORT)ib->NameLength;
             in2.MaximumLength = (USHORT)ib->NameLength;
-            RtlStringCchPrintfW(src, 760, L"%s\\%wZ", tmp, &in2);
-            RtlStringCchPrintfW(dst, 720, L"%s-SPOOF", src);
+            CopyW(src, 760, tmp, 760); Append(src, 760, L"\\"); AppendN(src, 760, in2.Buffer, in2.Length / 2);
+            CopyW(dst, 720, src, 720); Append(dst, 720, L"-SPOOF");
             if (NT_SUCCESS(GpuMove(src, dst))) {
-                RtlStringCchPrintfW(cnt, 8, L"%lu", saved++);
+                NumW(cnt, 8, saved++);
                 RegSz(BK_KEY, cnt, src);
             }
         }
@@ -440,11 +482,11 @@ static void GpuRevert()
 {
     WCHAR src[760], back[720], cnt[8];
     for (ULONG i = 0; i < 32; i++) {
-        RtlStringCchPrintfW(cnt, 8, L"%lu", i);
+        NumW(cnt, 8, i);
         WCHAR val[760] = {0};
         if (!NT_SUCCESS(RegRead(BK_KEY, cnt, val, 760)) || !val[0]) continue;
-        RtlStringCchPrintfW(src, 760, L"%s", val);
-        RtlStringCchPrintfW(back, 720, L"%s-SPOOF", src);
+        CopyW(src, 760, val, 760);
+        CopyW(back, 720, src, 720); Append(back, 720, L"-SPOOF");
         GpuMove(back, src);
         RtlDeleteRegistryValue(RTL_REGISTRY_ABSOLUTE, BK_KEY, cnt);
     }
@@ -465,7 +507,7 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
     if (c->Flags & SPOOF_VOLUME) {
         for (int vi = 1; vi <= 4 && !g_DrvVol; vi++) {
             WCHAR vn[40];
-            RtlStringCchPrintfW(vn, 40, L"\\Device\\HarddiskVolume%d", vi);
+            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40); { WCHAR nb[8]; NumW(nb, 8, (ULONG)vi); Append(vn, 40, nb); }
             g_DrvVol = DrvOfVolume(vn);
         }
         if (NT_SUCCESS(HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol)))
