@@ -36,7 +36,7 @@
             <RadioButton x:Name="NavLogs" Style="{StaticResource Nav}" Content="Journal" GroupName="nav" Click="Nav_Click" Tag="4"/>
             <Separator Margin="6,12" Background="{StaticResource Line}"/>
             <TextBlock Text="PROVIDER KDU" Style="{StaticResource Mono}" Margin="6,0,0,6"/>
-            <ComboBox x:Name="CmbProvider" Margin="4,0" SelectedIndex="0">
+            <ComboBox x:Name="CmbProvider" Style="{StaticResource DarkCombo}" Margin="4,0" SelectedIndex="0">
               <ComboBoxItem Content="Auto (rotatif)"/>
             </ComboBox>
             <CheckBox x:Name="ChkCleanBefore" Content="Cleaner avant spoof" IsChecked="True" Margin="6,10,0,0" FontSize="11.5"/>

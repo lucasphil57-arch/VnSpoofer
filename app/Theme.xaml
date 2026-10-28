@@ -59,10 +59,56 @@
     <Setter Property="Margin" Value="0,6"/>
     <Setter Property="Cursor" Value="Hand"/>
   </Style>
-  <Style TargetType="ComboBox">
-    <Setter Property="Background" Value="{StaticResource Panel2}"/>
+  <Style x:Key="DarkCombo" TargetType="ComboBox">
     <Setter Property="Foreground" Value="{StaticResource Text}"/>
-    <Setter Property="Padding" Value="8"/>
+    <Setter Property="Height" Value="28"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <ToggleButton Focusable="False" ClickMode="Press"
+                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                  <Border Background="{StaticResource Panel2}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6">
+                    <Path Data="M0,0 L4,4 L8,0" Stroke="{StaticResource Muted}" StrokeThickness="1.4"
+                          HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                  </Border>
+                </ControlTemplate>
+              </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" Margin="10,0,26,0"
+                              VerticalAlignment="Center" IsHitTestVisible="False"
+                              TextElement.Foreground="{StaticResource Text}"/>
+            <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"
+                   Focusable="False" PopupAnimation="Slide">
+              <Border Background="{StaticResource Panel2}" BorderBrush="{StaticResource Line}"
+                      BorderThickness="1" CornerRadius="6" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="220">
+                <ScrollViewer><StackPanel IsItemsHost="True"/></ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="ComboBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    <Setter Property="Padding" Value="10,6"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="B" Background="Transparent" Padding="{TemplateBinding Padding}">
+            <ContentPresenter/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="B" Property="Background" Value="#1C2230"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
   <Style x:Key="Nav" TargetType="RadioButton">
     <Setter Property="Foreground" Value="{StaticResource Muted}"/>
