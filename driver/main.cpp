@@ -117,7 +117,7 @@ static NTSTATUS WriteKernelMem(PVOID dst, PVOID src, ULONG len)
     if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
 
     __try {
-        MmProbeAndLockPages(mdl, KernelMode, IoWriteAccess);
+        MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         IoFreeMdl(mdl);
         return STATUS_UNSUCCESSFUL;
@@ -711,10 +711,30 @@ static VOID Unload(PDRIVER_OBJECT d)
     IoDeleteDevice(d->DeviceObject);
 }
 
+static BOOLEAN RegisterSeh(PVOID anchor)
+{
+    ULONG64 p = (ULONG64)anchor & ~0xFFFULL;
+    PIMAGE_DOS_HEADER dos = NULL;
+    PIMAGE_NT_HEADERS nt;
+    PIMAGE_DATA_DIRECTORY dir;
+    int i;
+
+    for (i = 0; i < 1024; i++, p -= 0x1000) {
+        if (*(PUSHORT)p == 0x5A4D) { dos = (PIMAGE_DOS_HEADER)p; break; }
+    }
+    if (!dos) return FALSE;
+    nt = (PIMAGE_NT_HEADERS)((PUCHAR)dos + dos->e_lfanew);
+    if (nt->Signature != 0x00004550) return FALSE;
+    dir = &nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+    if (!dir->VirtualAddress || !dir->Size) return FALSE;
+    return RtlAddFunctionTable((PRUNTIME_FUNCTION)((PUCHAR)dos + dir->VirtualAddress),
+                               dir->Size / sizeof(RUNTIME_FUNCTION), (ULONG64)dos);
+}
 NTSTATUS DriverEntry(PDRIVER_OBJECT drv, PUNICODE_STRING reg)
 {
     UNREFERENCED_PARAMETER(reg);
     if (!drv) return STATUS_UNSUCCESSFUL;
+    RegisterSeh((PVOID)DriverEntry);
     UNICODE_STRING n, s;
     RtlInitUnicodeString(&n, DEV_NAME);
     RtlInitUnicodeString(&s, SYM_NAME);
