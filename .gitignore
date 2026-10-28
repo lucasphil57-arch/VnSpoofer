@@ -1,0 +1,6 @@
+﻿bin/
+obj/
+x64/
+out/
+app/res/*.sys
+app/res/*.exe
