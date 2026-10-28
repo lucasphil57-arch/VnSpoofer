@@ -6,23 +6,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: SDK + WDK
+      - name: WDK
         shell: pwsh
         run: |
-          $w = "winget install -e --accept-source-agreements --accept-package-agreements --disable-interactivity --override `"/features OptionId.DesktopCPPx64 /quiet /norestart`""
-          Invoke-Expression "$w --id Microsoft.WindowsSDK.10.0.26100"
-          Invoke-Expression "$w --id Microsoft.WindowsWDK.10.0.26100"
-          $t = "C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets"
-          $h = "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\ntddk.h"
-          if (-not (Test-Path $t)) { Write-Host "::error::WDK targets absents"; exit 1 }
-          if (-not (Test-Path $h)) { Write-Host "::error::WDK headers absents"; exit 1 }
-          Write-Host "WDK OK"
+          $ErrorActionPreference = 'Continue'
+          $pat = "C:\Program Files (x86)\Windows Kits\10\Include\10.0.*\km\ntddk.h"
+
+          winget configure -f "https://raw.githubusercontent.com/microsoft/Windows-driver-samples/main/_wdk_utils/winget/configs/wdk-vsenterprise.dsc.yaml" --accept-configuration-agreements --disable-interactivity
+
+          if (-not (Get-ChildItem $pat -ErrorAction SilentlyContinue)) {
+            Write-Host "::warning::configure KO, repli chocolatey"
+            choco install windowsdriverkit10 -y --no-progress --ignore-checksums
+          }
+
+          $h = Get-ChildItem $pat -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $h) { Write-Host "::error::WDK absent"; exit 1 }
+          $v = $h.Directory.Parent.Name
+          "WDKVER=$v" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "WDK $v pret"
 
       - name: Driver
         shell: pwsh
         run: |
           $msb = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:TargetPlatformVersion=10.0.26100.0 /m
+          & $msb driver\VnSpoofer.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off "/p:TargetPlatformVersion=$env:WDKVER" /m
 
       - name: KDU
         shell: pwsh
