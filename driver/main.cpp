@@ -87,9 +87,11 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     while (off < len) {
         hde64_disasm(d->Stolen + off, &hs);
         if (hs.flags & F_RELATIVE) {
-            ULONGLONG abs = (ULONGLONG)((PUCHAR)t + off + hs.len + hs.disp.disp32);
-            *(PLONG)(d->Tramp + off + (ULONG)FIELD_OFFSET(hde64s, disp)) =
-                (LONG)(abs - (ULONGLONG)(d->Tramp + off + hs.len));
+            LONG dsp = (hs.flags & F_DISP32) ? hs.disp.disp32 : (LONG)(signed char)hs.disp.disp8;
+            ULONGLONG abs = (ULONGLONG)((PUCHAR)t + off + hs.len + dsp);
+            LONG nd = (LONG)(abs - (ULONGLONG)(d->Tramp + off + hs.len));
+            if (hs.flags & F_DISP32) *(PLONG)(d->Tramp + off + hs.len - 4) = nd;
+            else *(PCHAR)(d->Tramp + off + hs.len - 1) = (CHAR)nd;
         }
         off += hs.len;
     }
