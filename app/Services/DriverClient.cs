@@ -85,7 +85,7 @@ namespace VnSpoofer.Services
                 log($"tentative provider {id}", "#7C8797");
                 try
                 {
-                    var mp = Process.Start(new ProcessStartInfo(kdu, $"-prv {id} -map \"{sys}\"")
+                    var mp = Process.Start(new ProcessStartInfo(kdu, $"-prv {id} -scv 3 -drvn VnSpoofer -drvr VnSpoofer -map \"{sys}\"")
                     { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, WorkingDirectory = Dir });
                     last = await mp.StandardOutput.ReadToEndAsync();
                     await mp.WaitForExitAsync();

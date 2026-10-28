@@ -586,6 +586,7 @@ static VOID Unload(PDRIVER_OBJECT d)
 NTSTATUS DriverEntry(PDRIVER_OBJECT drv, PUNICODE_STRING reg)
 {
     UNREFERENCED_PARAMETER(reg);
+    if (!drv) return STATUS_UNSUCCESSFUL;
     UNICODE_STRING n, s;
     RtlInitUnicodeString(&n, DEV_NAME);
     RtlInitUnicodeString(&s, SYM_NAME);
