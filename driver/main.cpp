@@ -117,7 +117,7 @@ static BOOLEAN IsKernelPtr(PVOID p)
 static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
 {
     hde64s hs;
-    ULONG  len = 0, out = 0, off;
+    ULONG  len = 0, out = 0, off, nins = 0;
     PUCHAR src, dst;
     LONG   nd;
     ULONGLONG abs;
@@ -125,7 +125,6 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     if (!d || !t || !h || !IsKernelPtr(t) || !IsKernelPtr(h)) return STATUS_INVALID_PARAMETER;
     if (g_TrampNext >= 4) return STATUS_INSUFFICIENT_RESOURCES;
 
-    /* suit les thunks jmp rel32 / rel8 jusqu'au corps reel */
     for (int hop = 0; hop < 4; hop++) {
         PUCHAR p = (PUCHAR)t;
         if (p[0] == 0xE9) { t = p + 5 + *(LONG*)(p + 1); if (!IsKernelPtr(t)) return STATUS_UNSUCCESSFUL; continue; }
@@ -133,11 +132,11 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         break;
     }
 
-    /* 1. mesure des octets a voler (au moins 12 pour mov rax+jmp rax) */
     while (len < 14) {
         if (!hde64_disasm((PUCHAR)t + len, &hs) || hs.len == 0 || hs.len > 15) return STATUS_UNSUCCESSFUL;
         len += hs.len;
-        if (len > 24) return STATUS_UNSUCCESSFUL;
+        nins++;
+        if (nins > 8 || len > 24) return STATUS_UNSUCCESSFUL;
     }
 
     d->Target   = t;
@@ -149,7 +148,6 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     RtlZeroMemory(d->Tramp, 256);
     RtlCopyMemory(d->Stolen, t, len);
 
-    /* 2. construction du trampoline, relocalisation par type d'instruction */
     src = (PUCHAR)t;
     dst = d->Tramp;
     off = 0;
@@ -203,14 +201,24 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
         off += hs.len;
     }
 
-    /* 3. jmp retour absolu vers t+len */
     dst[out] = 0xFF;
     dst[out + 1] = 0x25;
     *(LONG*)(dst + out + 2) = 0;
     *(PVOID*)(dst + out + 6) = (PUCHAR)t + len;
     d->TrampLen = out + 14;
 
-    /* 4. pose du hook : mov rax,hook ; jmp rax ; nop */
+    {
+        ULONG vl = 0, vc = 0, k;
+        BOOLEAN bad = FALSE;
+        for (k = 0; k < nins; k++) {
+            hde64s vs;
+            if (!hde64_disasm(dst + vl, &vs) || vs.len == 0) { bad = TRUE; break; }
+            vl += vs.len;
+            vc++;
+        }
+        if (bad || vc != nins || vl != out) return STATUS_UNSUCCESSFUL;
+    }
+
     WpOff();
     {
         PUCHAR p = (PUCHAR)t;
@@ -222,7 +230,6 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     }
     WpOn();
 
-    /* 5. controle que l'ecriture a bien pris (HVCI / WP) */
     if (((PUCHAR)t)[0] != 0x48 || ((PUCHAR)t)[10] != 0xFF) {
         WpOff();
         RtlCopyMemory((PUCHAR)t, d->Stolen, len);
@@ -234,7 +241,6 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     d->Active = TRUE;
     return STATUS_SUCCESS;
 }
-
 static void DetourRemove(DETOUR* d)
 {
     if (!d || !d->Active) return;
@@ -349,11 +355,22 @@ static void SmbStr(PUCHAR hdr, PUCHAR end, UCHAR idx, const CHAR* val)
     }
 }
 
-static void PatchSmbios(PSFTI fi)
+static void PatchSmbios(PSFTI fi, ULONG len)
 {
+    PUCHAR raw, p, end;
+    ULONG  avail;
+
+    if (!fi || len < 28) return;
     if (fi->TableBufferLength < 12) return;
-    PUCHAR p = fi->TableBuffer + 8;
-    PUCHAR end = fi->TableBuffer + fi->TableBufferLength;
+
+    avail = len - 16;
+    if (fi->TableBufferLength < avail) avail = fi->TableBufferLength;
+    if (avail < 12) return;
+
+    raw = fi->TableBuffer;
+    p   = raw + 8;
+    end = raw + avail;
+
     while (p + 4 < end) {
         UCHAR t = p[0];
         UCHAR sl = p[1];
@@ -371,17 +388,20 @@ static void PatchSmbios(PSFTI fi)
         p = nx + 2;
     }
 }
-
 static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULONG ret)
 {
     NTSTATUS st = ((PFN_NQSI)g_Nqsi)(c, buf, len, ret);
-    if (NT_SUCCESS(st) && c == SystemFirmwareTableInformation && buf) {
+
+    if (!NT_SUCCESS(st) || c != SystemFirmwareTableInformation || !buf) return st;
+
+    __try {
         PSFTI fi = (PSFTI)buf;
-        if (fi->ProviderSignature == 'RSMB' && fi->TableBufferLength) PatchSmbios(fi);
-    }
+        if (fi->ProviderSignature == 'RSMB' && fi->Action == 0 && fi->TableBufferLength)
+            PatchSmbios(fi, len);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+
     return st;
 }
-
 static NTSTATUS RegSz(PCWSTR path, PCWSTR val, PCWSTR data)
 {
     return RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, path, val, REG_SZ,
