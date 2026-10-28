@@ -6,11 +6,11 @@ $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10'
 
 # --- SDK : on prend celui du systeme qui a um\excpt.h (le paquet nuget n'a pas um) ---
 $sdkCand = Get-ChildItem "$sdkRoot\Include" -Directory -ErrorAction SilentlyContinue |
-           Where-Object { Test-Path (Join-Path $_.FullName 'um\excpt.h') } |
+           Where-Object { Test-Path (Join-Path $_.FullName 'um\windows.h') } |
            Sort-Object Name -Descending
 if (-not $sdkCand) {
     Get-ChildItem "$sdkRoot\Include" -Recurse -Filter excpt.h -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "excpt.h: $($_.FullName)" }
-    throw 'aucun SDK systeme avec um\excpt.h'
+    throw 'aucun SDK systeme exploitable'
 }
 $sInc = $sdkCand[0].FullName
 $ver  = $sdkCand[0].Name
@@ -43,7 +43,7 @@ $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 $cl = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
 if (-not $cl) { throw 'cl.exe introuvable' }
 $link = Join-Path (Split-Path $cl) 'link.exe'
-$msvc = Split-Path (Split-Path (Split-Path $cl))
+$msvc = Split-Path (Split-Path (Split-Path (Split-Path $cl)))
 
 $incDirs = @((Join-Path $msvc 'include'), (Join-Path $wInc 'km'), (Join-Path $wInc 'shared'),
              (Join-Path $sInc 'ucrt'), (Join-Path $sInc 'shared'), (Join-Path $sInc 'um')) |
