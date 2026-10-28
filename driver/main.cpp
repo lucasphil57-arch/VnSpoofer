@@ -66,6 +66,47 @@ static ULONG g_TrampNext = 0;
 static KIRQL g_Irql;
 static __forceinline void WpOff() { g_Irql = KeRaiseIrqlToDpcLevel(); __writecr0(__readcr0() & ~0x10000); }
 static __forceinline void WpOn()  { __writecr0(__readcr0() | 0x10000); KeLowerIrql(g_Irql); }
+static void CopyA(PCHAR dst, ULONG cch, const CHAR* src, ULONG max)
+{
+    if (!cch) return;
+    ULONG i = 0;
+    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
+    dst[i] = 0;
+}
+
+static void CopyW(PWSTR dst, ULONG cch, PCWSTR src, ULONG max)
+{
+    if (!cch) return;
+    ULONG i = 0;
+    while (i + 1 < cch && i < max && src[i]) { dst[i] = src[i]; i++; }
+    dst[i] = 0;
+}
+
+static void Append(PWSTR dst, ULONG cch, PCWSTR src)
+{
+    ULONG n = 0, i = 0;
+    while (n + 1 < cch && dst[n]) n++;
+    while (n + 1 < cch && src[i]) { dst[n++] = src[i++]; }
+    dst[n] = 0;
+}
+
+static void AppendN(PWSTR dst, ULONG cch, PCWSTR src, ULONG chars)
+{
+    ULONG n = 0, i = 0;
+    while (n + 1 < cch && dst[n]) n++;
+    while (n + 1 < cch && i < chars && src[i]) { dst[n++] = src[i++]; }
+    dst[n] = 0;
+}
+
+static void NumW(PWSTR dst, ULONG cch, ULONG v)
+{
+    WCHAR t[12];
+    ULONG n = 0, o = 0;
+    if (!v) t[n++] = L'0';
+    while (v) { t[n++] = (WCHAR)(L'0' + (v % 10)); v /= 10; }
+    while (n && o + 1 < cch) dst[o++] = t[--n];
+    dst[o] = 0;
+}
 
 static BOOLEAN IsKernelPtr(PVOID p)
 {
