@@ -1136,54 +1136,24 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
     if (g_Applied) return STATUS_ALREADY_REGISTERED;
     RtlCopyMemory(&g_Cfg, c, sizeof(SPOOF_CFG));
 
-    if (c->Flags & SPOOF_DISK) {
-        ULONG h = 0;
-        WCHAR vn[40], nb[8];
-        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskPath");
-        h += StackHook(L"\\DosDevices\\PhysicalDrive0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskP0");
-        HookFsd(L"\\DosDevices\\C:", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"FsdCDisk");
-        for (int vi = 1; vi <= 8; vi++) {
-            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
-            NumW(nb, 8, (ULONG)vi);
-            Append(vn, 40, nb);
-            h += StackHook(vn, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskPath");
-        }
-        DbgDw(L"DiskDrv", h);
-        DbgDw(L"DiskSt", 0);
-        if (h) g_HookDisk = TRUE;
-    }
-
-    if (c->Flags & SPOOF_VOLUME) {
-        ULONG h = 0;
-        WCHAR vn[40], nb[8];
-        for (int vi = 1; vi <= 8; vi++) {
-            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
-            NumW(nb, 8, (ULONG)vi);
-            Append(vn, 40, nb);
-            StackHook(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"VolPath");
-            HookFsd(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"FsdPath");
-            if (g_HkN) h = g_HkN;
-        }
-        StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"VolPath");
-        HookFsd(L"\\DosDevices\\C:", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"FsdC");
-        if (g_HkN) h = g_HkN;
-        DbgDw(L"VolDrv", h);
-        DbgDw(L"VolSt", 0);
-        if (h) g_HookVol = TRUE;
-    }
     if (c->Flags & (SPOOF_MAC | SPOOF_DISK | SPOOF_VOLUME)) {
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtDeviceIoControlFile");
         g_NdiCf = MmGetSystemRoutineAddress(&n);
-        if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) { g_HookMac = TRUE; g_NdiCf = g_DtNdi.Tramp; }
+        if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) {
+            g_HookMac = TRUE; g_NdiCf = g_DtNdi.Tramp; DbgDw(L"DiskDrv", 1);
+        } else DbgDw(L"DiskDrv", 0);
         if (c->Flags & SPOOF_MAC) MacRegApply();
     }
 
     if (c->Flags & SPOOF_VOLUME) {
         UNICODE_STRING n;
+
         RtlInitUnicodeString(&n, L"NtQueryVolumeInformationFile");
         g_Nqvi = MmGetSystemRoutineAddress(&n);
-        if (g_Nqvi && NT_SUCCESS(DetourInstall(&g_DtNqvi, g_Nqvi, (PVOID)HookNqvi))) { g_HookVol = TRUE; g_Nqvi = g_DtNqvi.Tramp; }
+        if (g_Nqvi && NT_SUCCESS(DetourInstall(&g_DtNqvi, g_Nqvi, (PVOID)HookNqvi))) {
+            g_HookVol = TRUE; g_Nqvi = g_DtNqvi.Tramp; DbgDw(L"VolDrv", 1);
+        } else DbgDw(L"VolDrv", 0);
 
         RtlInitUnicodeString(&n, L"NtQueryInformationFile");
         g_Nqi = MmGetSystemRoutineAddress(&n);
