@@ -1,4 +1,4 @@
-﻿// VnSpoofer.sys - spoofer HWID kernel, 100% en memoire
+// VnSpoofer.sys - spoofer HWID kernel, 100% en memoire
 #include <ntddk.h>
 #define NTSTRSAFE_LIB
 #include <ntstrsafe.h>
@@ -385,49 +385,65 @@ static NTSTATUS HookNdi(HANDLE h, HANDLE ev, PIO_APC_ROUTINE a, PVOID ac,
     return st;
 }
 
-static void SmbStr(PUCHAR hdr, PUCHAR end, UCHAR idx, const CHAR* val)
+static void SmbSet(PUCHAR hdr, PUCHAR end, ULONG off, const CHAR* val)
 {
-    if (!idx) return;
-    PUCHAR p = hdr + 4 + hdr[1];
-    for (UCHAR i = 1; i <= idx; i++) {
-        if (p >= end) return;
-        if (i == idx) {
-            CopyA((CHAR*)p, VnStrLenA((CHAR*)p) + 1, val, VnStrLenA((CHAR*)p));
-            return;
-        }
-        p += VnStrLenA((CHAR*)p) + 1;
+    if (hdr + off >= end) return;
+    ULONG nl = VnStrLenA((CHAR*)val);
+    if (!nl) return;
+    PUCHAR base = hdr + 4 + hdr[1];
+    if (base >= end) return;
+
+    UCHAR idx = hdr[off], n = 1, tidx = 0, bidx = 0;
+    PUCHAR p = base, tgt = NULL, best = NULL;
+    ULONG tlen = 0, blen = 0;
+
+    while (p < end && *p) {
+        ULONG ol = VnStrLenA((CHAR*)p);
+        if (n == idx) { tgt = p; tlen = ol; tidx = n; }
+        if (ol > blen) { best = p; blen = ol; bidx = n; }
+        p += ol + 1;
+        n++;
     }
+    if ((!tgt || tlen < nl) && best) { tgt = best; tlen = blen; tidx = bidx; }
+    if (!tgt || tlen < nl) return;
+
+    hdr[off] = tidx;
+    RtlCopyMemory(tgt, val, nl);
+    for (ULONG i = nl; i < tlen; i++) tgt[i] = ' ';
+    tgt[tlen] = 0;
 }
 
 static void PatchSmbios(PSFTI fi, ULONG len)
 {
-    PUCHAR raw, p, end;
-    ULONG  avail;
-
     if (!fi || len < 28) return;
-    if (fi->TableBufferLength < 12) return;
 
-    avail = len - 16;
-    if (fi->TableBufferLength < avail) avail = fi->TableBufferLength;
+    ULONG avail = fi->TableBufferLength;
+    if (!avail || avail > len - 16) avail = len - 16;
     if (avail < 12) return;
 
-    raw = fi->TableBuffer;
-    p   = raw + 8;
-    end = raw + avail;
+    PUCHAR raw = fi->TableBuffer;
+    if (!raw) return;
+
+    ULONG tl = *(PULONG)(raw + 4);
+    if (tl && tl + 8 < avail) avail = tl + 8;
+
+    PUCHAR p = raw + 8, end = raw + avail;
 
     while (p + 4 < end) {
         UCHAR t = p[0];
         UCHAR sl = p[1];
         PUCHAR nx = p + 4 + sl;
         if (nx >= end) break;
+
         if (t == 1 && sl >= 0x19) {
             RtlCopyMemory(p + 8, g_Cfg.Uuid, 16);
-            SmbStr(p, end, p[5], g_Cfg.SysProduct);
         } else if (t == 2 && sl >= 8) {
-            SmbStr(p, end, p[7], g_Cfg.BoardSerial);
+            SmbSet(p, end, 5, g_Cfg.SysProduct);
+            SmbSet(p, end, 7, g_Cfg.BoardSerial);
         } else if (t == 0 && sl >= 8) {
-            SmbStr(p, end, p[7], g_Cfg.BiosSerial);
+            SmbSet(p, end, 7, g_Cfg.BiosSerial);
         }
+
         while (nx + 1 < end && !(nx[0] == 0 && nx[1] == 0)) nx++;
         p = nx + 2;
     }
@@ -440,7 +456,7 @@ static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULON
 
     __try {
         PSFTI fi = (PSFTI)buf;
-        if (fi->ProviderSignature == 'RSMB' && fi->Action == 0 && fi->TableBufferLength)
+        if (fi->ProviderSignature == 'RSMB' && (fi->Action == 2 || fi->Action == 0) && fi->TableBufferLength)
             PatchSmbios(fi, len);
     } __except (EXCEPTION_EXECUTE_HANDLER) { }
 
