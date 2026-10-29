@@ -116,13 +116,17 @@ namespace VnSpoofer
             BtnSpoof.IsEnabled = false;
             try
             {
+                if (ChkCleanBefore.IsChecked == true) await Cleaner.RunAsync(Log);
+                if (!await EnsureMapped()) return;
+
+                await _drv.RevertAsync();
+                IpSpoof.Revert(_st);
+                MonitorSpoof.Revert(_st);
+
                 _st = new State();
                 CaptureOriginals();
                 _id = Identity.Random();
                 Fill();
-
-                if (ChkCleanBefore.IsChecked == true) await Cleaner.RunAsync(Log);
-                if (!await EnsureMapped()) return;
 
                 uint flags = Flags();
                 _st.Flags = (int)flags;
@@ -163,8 +167,16 @@ namespace VnSpoofer
             SetPill("VERIF", "#F5A623", "#0A0C0F");
             Log("Identite precedente detectee, re-application pour verification...", "#F5A623");
             if (!await EnsureMapped()) return;
+            _st.Expected["uuid"] = _id.Uuid;
+            _st.Expected["board"] = _id.Board;
+            _st.Expected["bios"] = _id.Bios;
+            _st.Expected["product"] = _id.Product;
+            _st.Expected["disk"] = _id.Disk;
+            _st.Expected["volume"] = _id.Volume;
+            _st.Expected["mac"] = _id.Mac;
+            _st.Expected["guid"] = _id.Guid;
             uint flags = (uint)_st.Flags;
-            if (flags != 0 && _drv.Apply(_id, flags)) Log("Re-applique.", "#33D17A");
+            await _drv.RevertAsync(); if (flags != 0 && _drv.Apply(_id, flags)) Log("Re-applique.", "#33D17A"); else Log("Re-application echouee.", "#E5484D");
             BtnRevert.IsEnabled = true;
             Refresh();
         }

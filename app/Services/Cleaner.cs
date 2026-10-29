@@ -24,13 +24,19 @@ namespace VnSpoofer.Services
             ("HKLM", @"SYSTEM\CurrentControlSet\Services\EasyAntiCheat")
         };
 
+        static void ForceDelete(string p)
+        {
+            foreach (var f in Directory.GetFiles(p, "*", SearchOption.AllDirectories))
+                try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+            Directory.Delete(p, true);
+        }
         public static async Task RunAsync(Action<string, string> log)
         {
             log("-- Cleaner --", "#5B8CFF");
             foreach (var d in Dirs)
             {
                 string p = Environment.ExpandEnvironmentVariables(d);
-                try { if (Directory.Exists(p)) { Directory.Delete(p, true); log("supprime " + p, "#33D17A"); } }
+                try { if (Directory.Exists(p)) { ForceDelete(p); log("supprime " + p, "#33D17A"); } }
                 catch (Exception e) { log("echec " + p + " : " + e.Message, "#FF5C5C"); }
             }
             string pf = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch");
