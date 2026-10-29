@@ -313,7 +313,7 @@ static PDRIVER_OBJECT DrvOfVolume(PCWSTR name)
     PFILE_OBJECT fo = NULL;
     PDEVICE_OBJECT dev = NULL;
     if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return NULL;
-    while (dev->AttachedDevice) dev = dev->AttachedDevice;
+    // pas de remontee AttachedDevice : l IRP entre par le device nomme
     PDRIVER_OBJECT d = dev->DriverObject;
     ObDereferenceObject(fo);
     return d;
@@ -331,9 +331,9 @@ static void DbgInc(PCWSTR name);
 static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
+    DbgInc(L"DiskDone");
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-    DbgInc(L"DiskDone");
     if (sp->Parameters.DeviceIoControl.IoControlCode != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
 
     PSTORAGE_PROPERTY_QUERY q = (PSTORAGE_PROPERTY_QUERY)irp->AssociatedIrp.SystemBuffer;
@@ -349,8 +349,7 @@ static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 static NTSTATUS HookDisk(PDEVICE_OBJECT dev, PIRP irp)
 {
     if (IoGetCurrentIrpStackLocation(irp)->MajorFunction == IRP_MJ_DEVICE_CONTROL) {
-        if (irp->CurrentLocation > 0) IoCopyCurrentIrpStackLocationToNext(irp);
-        else *IoGetNextIrpStackLocation(irp) = *IoGetCurrentIrpStackLocation(irp);
+        if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
         IoSetCompletionRoutine(irp, DiskDone, NULL, TRUE, TRUE, TRUE);
     }
     return g_OrigDisk(dev, irp);
@@ -359,9 +358,9 @@ static NTSTATUS HookDisk(PDEVICE_OBJECT dev, PIRP irp)
 static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
+    DbgInc(L"VolDone");
     if (NT_SUCCESS(irp->IoStatus.Status)) {
         PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-        DbgInc(L"VolDone");
         PVOID vb = irp->UserBuffer ? irp->UserBuffer : irp->AssociatedIrp.SystemBuffer;
         if (vb && sp->Parameters.QueryVolume.Length >= 12) {
             PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)vb;
@@ -373,8 +372,7 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 
 static NTSTATUS HookVol(PDEVICE_OBJECT dev, PIRP irp)
 {
-    if (irp->CurrentLocation > 0) IoCopyCurrentIrpStackLocationToNext(irp);
-    else *IoGetNextIrpStackLocation(irp) = *IoGetCurrentIrpStackLocation(irp);
+    if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
     IoSetCompletionRoutine(irp, VolDone, NULL, TRUE, TRUE, TRUE);
     return g_OrigVol(dev, irp);
 }
@@ -652,9 +650,9 @@ static BOOLEAN PrefEq(PCWSTR a, ULONG alen, PCWSTR b, ULONG blen)
 
 static NTSTATUS GpuApply()
 {
-    HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_ENUMERATE_SUB_KEYS, NULL);
+    HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_READ);
     if (!root) return STATUS_UNSUCCESSFUL;
-    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_ENUMERATE_SUB_KEYS, NULL);
+    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_READ);
     if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
 
     ULONG n = 0, i = 0, saved = 0;
@@ -667,6 +665,7 @@ static NTSTATUS GpuApply()
 
         CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
         if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) continue;
+        DbgInc(L"GpuMd");
 
         ml = (ULONG)VnStrLenW(md);
         mdp = md;
@@ -680,8 +679,9 @@ static NTSTATUS GpuApply()
             CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
             AppendN(dev, 460, eb->Name, eb->NameLength / 2);
 
-            HANDLE dh = OpenAbs(dev, KEY_ENUMERATE_SUB_KEYS, NULL);
-            if (!dh) break;
+            DbgInc(L"GpuMatch");
+            HANDLE dh = OpenAbs(dev, KEY_READ);
+            if (!dh) continue;
 
             ULONG m = 0, k = 0;
             while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
