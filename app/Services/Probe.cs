@@ -85,8 +85,15 @@ namespace VnSpoofer.Services
         {
             try
             {
-                using var h = CreateFileW(@"\\.\PhysicalDrive0", 0x80000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-                if (h.IsInvalid) return "";
+                Microsoft.Win32.SafeHandles.SafeFileHandle h = null;
+                for (int d = 0; d < 4 && (h == null || h.IsInvalid); d++)
+                {
+                    if (h != null) h.Dispose();
+                    h = CreateFileW(@"\\.\PhysicalDrive" + d, 0x80000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+                }
+                using (h)
+                {
+                if (h == null || h.IsInvalid) return "";
                 var q = new byte[12];
                 var o = new byte[1024];
                 uint r;
@@ -96,6 +103,7 @@ namespace VnSpoofer.Services
                 int e = off;
                 while (e < o.Length && o[e] != 0) e++;
                 return Encoding.ASCII.GetString(o, off, e - off).Trim();
+                }
             }
             catch { return ""; }
         }
@@ -188,7 +196,7 @@ public static string Read(string key)
                     case "bios": return SmbStr(0, 7);
                     case "product": return SmbStr(2, 5);
                     case "disk": return DiskSerial();
-                    case "volume": return Native.VolumeSerial("C:\\");
+                    case "volume": return Native.VolumeSerial(System.IO.Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\");
                     case "mac":
                         {
                             var m = MacReg();

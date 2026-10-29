@@ -1165,9 +1165,6 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
             g_HookVol = TRUE; g_Nqvi = g_DtNqvi.Tramp; DbgDw(L"VolDrv", 1);
         } else DbgDw(L"VolDrv", 0);
 
-        RtlInitUnicodeString(&n, L"NtQueryInformationFile");
-        g_Nqi = MmGetSystemRoutineAddress(&n);
-        if (g_Nqi && NT_SUCCESS(DetourInstall(&g_DtNqi, g_Nqi, (PVOID)HookNqi))) { g_HookVol = TRUE; g_Nqi = g_DtNqi.Tramp; }
     }
     if (c->Flags & SPOOF_SMBIOS) {
         UNICODE_STRING n;
@@ -1249,7 +1246,8 @@ static BOOLEAN RegisterSeh(PVOID anchor)
     int   i;
 
     for (i = 0; i < 1024; i++, p -= 0x1000) {
-        if (*(PUSHORT)p == 0x5A4D) break;
+        __try { if (*(PUSHORT)p == 0x5A4D) break; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { }
     }
     if (i >= 1024) return FALSE;
 

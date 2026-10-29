@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,6 +20,7 @@ namespace VnSpoofer
         State _st;
         Identity _id;
         int _cd;
+        string _envMsg;
         DispatcherTimer _timer;
 
         public MainWindow()
@@ -39,6 +41,7 @@ namespace VnSpoofer
                 TxtDashTitle.Text = "Identite precedente enregistree";
                 Log("Identite precedente chargee, rien n'est applique. Clique APPLIQUER pour reactiver.", "#F5A623");
                 Refresh();
+                CheckEnv();
             }
             else
             {
@@ -49,6 +52,7 @@ namespace VnSpoofer
                 SelectProfile("all");
                 Nav(0);
                 Log("Pret. Provider KDU en mode rotatif.", "#7C8797");
+                CheckEnv();
             }
         }
 
@@ -62,7 +66,115 @@ namespace VnSpoofer
             Splash.BeginAnimation(OpacityProperty, fade);
         }
 
+        static bool IsAdmin()
+        {
+            try
+            {
+                using var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+                return new System.Security.Principal.WindowsPrincipal(id)
+                    .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            }
+            catch { return false; }
+        }
+
+        void CheckEnv()
+        {
+            if (!Environment.Is64BitOperatingSystem) _envMsg = "Windows 64 bits requis, l'app ne fonctionne pas en 32 bits.";
+            else if (!IsAdmin()) _envMsg = "Lance l'app en administrateur : clic droit sur l'executable, Executer en tant qu'administrateur. Sans elevation le pilote ne peut pas etre mappe.";
+
+            if (_envMsg == null && BlocklistOn())
+                Log("Liste de blocage des pilotes vulnerables active : clique Preparer la machine puis redemarre.", "#F5A623");
+
+            if (_envMsg == null) return;
+            Nav(2);
+            AlertTitle.Text = "ENVIRONNEMENT NON CONFORME";
+            AlertText.Text = _envMsg;
+            AlertBox.Visibility = Visibility.Visible;
+            BtnSpoof.IsEnabled = false;
+            Log(_envMsg, "#FF5C5C");
+        }
+
+        static bool BlocklistOn()
+        {
+            try
+            {
+                using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Config");
+                if (k?.GetValue("VulnerableDriverBlocklistEnable") is int v) return v != 0;
+            }
+            catch { }
+            return true;
+        }
+
+        static bool HvciOn()
+        {
+            try
+            {
+                using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity");
+                if (k?.GetValue("Enabled") is int v) return v != 0;
+            }
+            catch { }
+            return false;
+        }
+
+        static bool SecureBootOn()
+        {
+            try
+            {
+                using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\SecureBoot\State");
+                if (k?.GetValue("UEFISecureBootEnabled") is int v) return v != 0;
+            }
+            catch { }
+            return false;
+        }
+
+        void Diag_Click(object s, RoutedEventArgs e)
+        {
+            Log("--- DIAGNOSTIC ---", "#5B8CFF");
+            Log("Architecture : " + (Environment.Is64BitOperatingSystem ? "64 bits, conforme" : "32 bits, NON SUPPORTE"), Environment.Is64BitOperatingSystem ? "#33D17A" : "#FF5C5C");
+            Log("Administrateur : " + (IsAdmin() ? "oui" : "NON, relance l'app en administrateur"), IsAdmin() ? "#33D17A" : "#FF5C5C");
+            Log("Liste de blocage des pilotes vulnerables : " + (BlocklistOn() ? "ACTIVE, clique Preparer la machine" : "desactivee, conforme"), BlocklistOn() ? "#FF5C5C" : "#33D17A");
+            Log("HVCI / Integrite de la memoire : " + (HvciOn() ? "ACTIF, clique Preparer la machine puis redemarre" : "desactive, conforme"), HvciOn() ? "#FF5C5C" : "#33D17A");
+            Log("Secure Boot : " + (SecureBootOn() ? "actif" : "inactif") + " (informe seulement, pas bloquant)", "#7C8797");
+            Log("Pilote joignable : " + (_drv.TryOpen() ? "oui" : "non, c'est normal avant le premier apply"), "#7C8797");
+        }
+
+        void Prep_Click(object s, RoutedEventArgs e)
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Config"))
+                    k.SetValue("VulnerableDriverBlocklistEnable", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                Log("Liste de blocage des pilotes vulnerables desactivee.", "#33D17A");
+                using (var hk = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(@"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"))
+                    hk.SetValue("Enabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                Log("HVCI (integrite de la memoire) desactive.", "#33D17A");
+            }
+            catch { Log("Preparation impossible : lance l'app en administrateur.", "#FF5C5C"); return; }
+
+            try
+            {
+                using var hk = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity");
+                if (hk?.GetValue("Enabled") is int hv && hv == 1)
+                    Log("HVCI est actif. Desactive aussi l'integrite de la memoire dans Securite Windows > Securite du noyau.", "#F5A623");
+            }
+            catch { }
+
+            Log("Redemarre pour que le changement prenne effet.", "#F5A623");
+        }
+
         void Drag(object s, MouseButtonEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed) Native.DragWindow(this); }
+
+        void RootDown(object s, MouseButtonEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            var src = e.OriginalSource as DependencyObject;
+            while (src != null)
+            {
+                if (src is Button || src is ToggleButton || src is CheckBox || src is ComboBox || src is RadioButton || src is TextBox) return;
+                src = System.Windows.Media.VisualTreeHelper.GetParent(src);
+            }
+            Native.DragWindow(this);
+        }
         void Min_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
         void Close_Click(object s, RoutedEventArgs e) => Close();
 
@@ -73,6 +185,13 @@ namespace VnSpoofer
 
         void Nav(int i)
         {
+            FrameworkElement shown = i == 0 ? SecDash : i == 1 ? (FrameworkElement)SecComp : i == 2 ? SecVerif : i == 3 ? (FrameworkElement)SecClean : i == 4 ? SecLogs : SecTuto;
+            if (shown != null)
+            {
+                shown.BeginAnimation(OpacityProperty,
+                    new System.Windows.Media.Animation.DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(170)));
+            }
+
             SecDash.Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed;
             SecComp.Visibility = i == 1 ? Visibility.Visible : Visibility.Collapsed;
             SecVerif.Visibility = i == 2 ? Visibility.Visible : Visibility.Collapsed;
@@ -129,7 +248,7 @@ namespace VnSpoofer
             if (_drv.TryOpen()) return true;
             Log("Mapping du driver...", "#F5A623");
             if (await _drv.MapAsync(CmbProvider.SelectedIndex, Log)) return true;
-            Log("Mapping echoue : desactive la liste de blocage des pilotes vulnerables puis redemarre.", "#FF5C5C");
+            Log("Mapping echoue : clique Preparer la machine, redemarre, puis reessaie.", "#FF5C5C");
             return false;
         }
 
@@ -291,12 +410,12 @@ namespace VnSpoofer
             TxtVerifySum.Text = $"{ok} / {Keys.All.Length} composants conformes";
 
             var bad = rows.Where(r => r.Mark != "OK").Select(r => r.Label).ToList();
-            if (bad.Count == 0) { AlertBox.Visibility = Visibility.Collapsed; TxtVerifySum.Foreground = (Brush)new BrushConverter().ConvertFromString("#33D17A"); }
+            if (bad.Count == 0 && _envMsg == null) { AlertBox.Visibility = Visibility.Collapsed; TxtVerifySum.Foreground = (Brush)new BrushConverter().ConvertFromString("#33D17A"); }
             else
             {
                 TxtVerifySum.Foreground = (Brush)new BrushConverter().ConvertFromString("#FF5C5C");
                 AlertBox.Visibility = Visibility.Visible;
-                AlertText.Text = "Non applique : " + string.Join(", ", bad) + ". Redemarre puis reapplique, ne lance pas le jeu dans cet etat.";
+                AlertText.Text = (_envMsg != null ? _envMsg + "\n\n" : "") + (bad.Count > 0 ? "Non applique : " + string.Join(", ", bad) + ". Redemarre puis reapplique, ne lance pas le jeu dans cet etat." : "");
             }
         }
 
@@ -403,13 +522,22 @@ namespace VnSpoofer
         {
             BusyStep.Text = step;
             BusySub.Text = sub;
+            _busyN = 1;
+            BusyCount.Text = "1 / 7";
             Busy.Visibility = Visibility.Visible;
             BtnSpoof.IsEnabled = false;
             BtnRevert.IsEnabled = false;
             BtnReboot.IsEnabled = false;
         }
 
-        void BusyStep_(string step, string sub) { BusyStep.Text = step; BusySub.Text = sub; }
+        int _busyN;
+        void BusyStep_(string step, string sub)
+        {
+            BusyStep.Text = step;
+            BusySub.Text = sub;
+            _busyN++;
+            BusyCount.Text = _busyN + " / 7";
+        }
 
         void BusyHide()
         {

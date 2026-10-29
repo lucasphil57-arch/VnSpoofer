@@ -37,7 +37,7 @@
       <Setter Property="BorderThickness" Value="0"/>
     </Style>
   </Window.Resources>
-  <Grid Background="{StaticResource BgGrad}">
+  <Grid Background="{StaticResource BgGrad}" PreviewMouseLeftButtonDown="RootDown">
     <Grid.RowDefinitions>
       <RowDefinition Height="62"/><RowDefinition Height="*"/><RowDefinition Height="70"/>
     </Grid.RowDefinitions>
@@ -98,6 +98,9 @@
             <ComboBoxItem Content="Auto (rotatif)"/>
           </ComboBox>
           <CheckBox x:Name="ChkCleanBefore" Content="Cleaner avant spoof" IsChecked="True" Margin="6,10,0,0" FontSize="11"/>
+          <Button x:Name="BtnPrep" Content="Preparer la machine" Style="{StaticResource Ghost}" Margin="4,10,0,0" Click="Prep_Click"/>
+          <Button x:Name="BtnDiag" Content="Diagnostic" Style="{StaticResource Ghost}" Margin="4,6,0,0" Click="Diag_Click"/>
+          <TextBlock TextWrapping="Wrap" FontSize="10.5" Foreground="{StaticResource Muted}" Margin="6,6,0,0" Text="Desactive la liste de blocage des pilotes vulnerables. Redemarrage requis."/>
         </StackPanel>
       </Border>
       <Grid Grid.Column="1" Margin="14,0,0,0">
@@ -252,7 +255,9 @@
                 <TextBlock Text="NIVEAU DE COUVERTURE" FontSize="14" FontWeight="SemiBold"/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="PROUVE : les 11 composants sont remplaces et verifiables dans l'onglet Verification, en user-mode comme sur les lectures registre et IOCTL. C'est ce que fait ce spoofer, rien de plus."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="NON COUVERT : TPM et son EK, etat Secure Boot, CPUID, SPD des barrettes, serie gravee dans la ROM du GPU, et toute lecture directe du firmware par un pilote noyau. Un anti-triche qui relit le materiel depuis son propre pilote voit donc encore l'empreinte d'origine."/>
-                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Retires de la liste parce que non tenables ici : Valorant et League of Legends (Vanguard se charge avant nous et exige Secure Boot et TPM), Call of Duty et Warzone (Ricochet, meme profil). Ils demarreront, mais l'empreinte ne sera pas neuve."/>
+                                                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="#E8B65C" Margin="0,8,0,0" Text="ENVIRONNEMENT : Windows 10 ou 11 en 64 bits uniquement, droits administrateur obligatoires. Sur Windows 11 recent, la liste de blocage des pilotes vulnerables doit etre levee via le bouton Preparer la machine, puis redemarrage."/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="#E8B65C" Margin="0,8,0,0" Text="PATCHGUARD : le spoofer ecrit dans le code du noyau, que Windows surveille. Sur une session longue, Windows peut detecter la modification et redemarrer le PC, generalement une a deux minutes apres l'apply. Applique juste avant de jouer, et ne laisse pas la machine spoofer pendant des heures sans raison."/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Retires de la liste parce que non tenables ici : Valorant et League of Legends (Vanguard se charge avant nous et exige Secure Boot et TPM), Call of Duty et Warzone (Ricochet, meme profil). Ils demarreront, mais l'empreinte ne sera pas neuve."/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -280,7 +285,19 @@
                 </Grid>
               </StackPanel>
             </Border>
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,10"><StackPanel><TextBlock Text="PAS A PAS - FORTNITE, RUST, APEX" FontSize="14" FontWeight="SemiBold"/><TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="FORTNITE (EAC). Ferme Fortnite et Epic, redemarre, ouvre l'app en admin, profil EAC, applique, verifie 11 sur 11, lance le jeu. Ne redemarre pas pendant la session. A la fin : Restaurer puis redemarrer." /><TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="RUST (EAC). Meme sequence. Lance Rust depuis Steam, pas un raccourci modifie, et ferme Steam avant d'appliquer. Erreur EAC au demarrage : Restaurer, redemarrer, reappliquer." /><TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="APEX (Javelin). Ferme Apex et le launcher EA, redemarre, profil Javelin, applique, verifie, lance. Ne relance pas deux fois d'affilee sans restaurer." /><TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Bandeau rouge sur un composant : ne lance pas le jeu, redemarre, reapplique. Deux echecs de suite sur le meme composant signifient que ce composant n'est pas couvert sur cette machine."/></StackPanel></Border>
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,10"><StackPanel>
+<TextBlock Text="PAS A PAS, JEU PAR JEU" FontSize="14" FontWeight="SemiBold"/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Regle commune a tous : fermer le jeu ET son launcher, redemarrer, ouvrir l'app en administrateur, choisir le profil, appliquer, verifier 11 sur 11 sans bandeau rouge, puis lancer. Ne pas redemarrer pendant la session. A la fin : Restaurer puis redemarrer."/>
+<TextBlock Text="EAC" Style="{StaticResource Mono}" Margin="0,12,0,4"/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Foreground="{StaticResource Muted}" Text="FORTNITE : fermer Epic Games Launcher depuis la zone de notification, lancer par l'Epic Games Launcher. RUST : fermer Steam, lancer par Steam, pas un raccourci modifie. DEAD BY DAYLIGHT : fermer Steam, lancer par Steam. HALO INFINITE : fermer l'app Xbox, lancer par le raccourci officiel. NARAKA : fermer Steam. THE FINALS : fermer Steam. Erreur EAC au demarrage : Restaurer, redemarrer, reappliquer."/>
+<TextBlock Text="BATTLEYE" Style="{StaticResource Mono}" Margin="0,12,0,4"/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Foreground="{StaticResource Muted}" Text="R6 SIEGE : fermer Ubisoft Connect, lancer par Ubisoft Connect. PUBG : fermer Steam. TARKOV : fermer le launcher Battlestate, lancer par le launcher. DAYZ : fermer Steam. ARMA REFORGER : fermer Steam. Ne garder aucun autre outil noyau ouvert, BattlEye liste les pilotes charges."/>
+<TextBlock Text="JAVELIN" Style="{StaticResource Mono}" Margin="0,12,0,4"/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Foreground="{StaticResource Muted}" Text="APEX : fermer l'app EA et Apex, lancer par l'app EA. BATTLEFIELD 6 et EA SPORTS FC : fermer l'app EA, Secure Boot obligatoire sinon le jeu refuse de demarrer. Ne pas relancer deux fois d'affilee sans restaurer, l'empreinte se melange."/>
+<TextBlock Text="SANS ANTI-TRICHE" Style="{StaticResource Mono}" Margin="0,12,0,4"/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Foreground="{StaticResource Muted}" Text="Jeux solo, Steam hors ligne, emulateurs : aucun risque, tout peut rester arme, IP et EDID compris."/>
+<TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="#E8B65C" Margin="0,12,0,0" Text="Deux echecs consecutifs sur le meme composant signifient que ce composant n'est pas couvert sur cette machine, pas que le spoofer est casse. Un seul echec isole se corrige par un redemarrage et une reapplication."/>
+</StackPanel></Border>
 <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
                 <TextBlock Text="EA JAVELIN" FontSize="15" FontWeight="SemiBold"/>
@@ -345,7 +362,15 @@
         </LinearGradientBrush>
       </Grid.Background>
       <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-        <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource AccentGrad}" HorizontalAlignment="Center">
+        <Border Width="150" Height="150" CornerRadius="75" HorizontalAlignment="Center">
+          <Border.Background>
+            <RadialGradientBrush>
+              <GradientStop Color="#3A2B7A" Offset="0"/>
+              <GradientStop Color="#00000000" Offset="1"/>
+            </RadialGradientBrush>
+          </Border.Background>
+        </Border>
+        <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource AccentGrad}" HorizontalAlignment="Center" Margin="0,-107,0,0">
           <TextBlock Text="v7" FontWeight="Bold" FontSize="22" Foreground="#08090D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <TextBlock Text="v7Zusanc" FontSize="30" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,18,0,0"/>
@@ -354,12 +379,16 @@
           <Border x:Name="SplashBar" Width="40" Height="3" CornerRadius="2" Background="{StaticResource Accent}" HorizontalAlignment="Left"/>
         </Border>
         <TextBlock Text="Bienvenue. Tout est reversible, rien n'est ecrit sur disque." FontSize="11.5" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+        <TextBlock x:Name="SplashTag" Text="CHARGEMENT DE L'INTERFACE" Style="{StaticResource Mono}" FontSize="9.5" Foreground="#3F4B5E" HorizontalAlignment="Center" Margin="0,22,0,0"/>
       </StackPanel>
     </Grid>    <Grid x:Name="Busy" Grid.RowSpan="3" Background="#D908090D" Visibility="Collapsed" Panel.ZIndex="60">
       <Border Width="440" Style="{StaticResource Card}" VerticalAlignment="Center" HorizontalAlignment="Center">
         <StackPanel>
           <TextBlock Text="SPOOF EN COURS" Style="{StaticResource Mono}"/>
-          <TextBlock x:Name="BusyStep" Text="Preparation" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0"/>
+          <Grid Margin="0,10,0,0">
+            <TextBlock x:Name="BusyStep" Text="Preparation" FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock x:Name="BusyCount" Text="1 / 7" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#4B5768"/>
+          </Grid>
           <ProgressBar x:Name="BusyBar" Style="{StaticResource ThinBar}" IsIndeterminate="True" Margin="0,14,0,0"/>
           <TextBlock x:Name="BusySub" Style="{StaticResource Mono}" TextWrapping="Wrap" Margin="0,12,0,0"/>
         </StackPanel>
