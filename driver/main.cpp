@@ -385,6 +385,47 @@ static NTSTATUS HookNdi(HANDLE h, HANDLE ev, PIO_APC_ROUTINE a, PVOID ac,
     return st;
 }
 
+static volatile LONG g_DbgBusy;
+
+static void DbgSet(PCWSTR name, ULONG v)
+{
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+
+    RtlInitUnicodeString(&u, BK_KEY);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
+    RtlInitUnicodeString(&vn, name);
+    ZwSetValueKey(h, &vn, 0, REG_DWORD, &v, sizeof(v));
+    ZwClose(h);
+}
+
+static void DbgInc(PCWSTR name)
+{
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+    ULONG v = 0, sz = 0;
+    UCHAR tmp[80];
+    PKEY_VALUE_PARTIAL_INFORMATION kv = (PKEY_VALUE_PARTIAL_INFORMATION)tmp;
+
+    if (InterlockedExchange(&g_DbgBusy, 1)) return;
+
+    RtlInitUnicodeString(&u, BK_KEY);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) {
+        RtlInitUnicodeString(&vn, name);
+        if (NT_SUCCESS(ZwQueryValueKey(h, &vn, KeyValuePartialInformation, kv, sizeof(tmp), &sz))
+            && kv->Type == REG_DWORD && kv->DataLength >= 4)
+            v = *(PULONG)kv->Data;
+        v++;
+        ZwSetValueKey(h, &vn, 0, REG_DWORD, &v, sizeof(v));
+        ZwClose(h);
+    }
+
+    InterlockedExchange(&g_DbgBusy, 0);
+}
 static void SmbSet(PUCHAR hdr, PUCHAR end, ULONG off, const CHAR* val)
 {
     if (hdr + off >= end) return;
@@ -422,7 +463,10 @@ static void PatchSmbios(PSFTI fi, ULONG len)
     if (avail < 12) return;
 
     PUCHAR raw = fi->TableBuffer;
-    if (!raw) return;
+    if (!raw) return
+    DbgInc(L"SmbCall");
+    DbgSet(L"SmbAvail", avail);
+    DbgSet(L"SmbSig", *(PULONG)raw);;
 
     ULONG tl = *(PULONG)(raw + 4);
     if (tl && tl + 8 < avail) avail = tl + 8;
@@ -450,15 +494,23 @@ static void PatchSmbios(PSFTI fi, ULONG len)
 }
 static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULONG ret)
 {
+    DbgInc(L"NqsiAll");
     NTSTATUS st = ((PFN_NQSI)g_Nqsi)(c, buf, len, ret);
 
-    if (!NT_SUCCESS(st) || c != SystemFirmwareTableInformation || !buf) return st;
+    if (c != SystemFirmwareTableInformation) return st;
+    DbgInc(L"NqsiC76");
+    if (!NT_SUCCESS(st) || !buf) return st;
 
     __try {
         PSFTI fi = (PSFTI)buf;
-        if (fi->ProviderSignature == 'RSMB' && (fi->Action == 2 || fi->Action == 0) && fi->TableBufferLength)
+        DbgSet(L"NqsiSig", fi->ProviderSignature);
+        DbgSet(L"NqsiAct", fi->Action);
+        DbgSet(L"NqsiLen", fi->TableBufferLength);
+        if (fi->ProviderSignature == 'RSMB' && (fi->Action == 2 || fi->Action == 0) && fi->TableBufferLength) {
+            DbgInc(L"NqsiPath");
             PatchSmbios(fi, len);
-    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { DbgInc(L"NqsiExc"); }
 
     return st;
 }
