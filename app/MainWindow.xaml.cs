@@ -167,6 +167,20 @@ namespace VnSpoofer
             SetPill("VERIF", "#F5A623", "#0A0C0F");
             Log("Identite precedente detectee, re-application pour verification...", "#F5A623");
             if (!await EnsureMapped()) return;
+
+            if (_st.Expected == null) _st.Expected = new Dictionary<string, string>(); if (_st.Original == null) _st.Original = new Dictionary<string, string>(); if (_id == null || string.IsNullOrEmpty(_id.Uuid))
+            {
+                _id = new Identity { MonA = 'A', MonB = 'A', MonC = 'A' };
+                if (_st.Expected.TryGetValue("uuid", out var _u)) _id.Uuid = _u;
+                if (_st.Expected.TryGetValue("board", out var _b)) _id.Board = _b;
+                if (_st.Expected.TryGetValue("bios", out var _bi)) _id.Bios = _bi;
+                if (_st.Expected.TryGetValue("product", out var _p)) _id.Product = _p;
+                if (_st.Expected.TryGetValue("disk", out var _d)) _id.Disk = _d;
+                if (_st.Expected.TryGetValue("volume", out var _v)) _id.Volume = _v;
+                if (_st.Expected.TryGetValue("mac", out var _m)) _id.Mac = _m;
+                if (_st.Expected.TryGetValue("guid", out var _g)) _id.Guid = _g;
+            }
+
             _st.Expected["uuid"] = _id.Uuid;
             _st.Expected["board"] = _id.Board;
             _st.Expected["bios"] = _id.Bios;
