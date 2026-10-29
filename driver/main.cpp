@@ -650,9 +650,9 @@ static BOOLEAN PrefEq(PCWSTR a, ULONG alen, PCWSTR b, ULONG blen)
 
 static NTSTATUS GpuApply()
 {
-    HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_READ);
+    HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_READ, NULL);
     if (!root) return STATUS_UNSUCCESSFUL;
-    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_READ);
+    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_READ, NULL);
     if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
 
     ULONG n = 0, i = 0, saved = 0;
@@ -680,7 +680,7 @@ static NTSTATUS GpuApply()
             AppendN(dev, 460, eb->Name, eb->NameLength / 2);
 
             DbgInc(L"GpuMatch");
-            HANDLE dh = OpenAbs(dev, KEY_READ);
+            HANDLE dh = OpenAbs(dev, KEY_READ, NULL);
             if (!dh) continue;
 
             ULONG m = 0, k = 0;
