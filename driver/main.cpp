@@ -506,7 +506,7 @@ static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULON
         DbgSet(L"NqsiSig", fi->ProviderSignature);
         DbgSet(L"NqsiAct", fi->Action);
         DbgSet(L"NqsiLen", fi->TableBufferLength);
-        if (fi->ProviderSignature == 'RSMB' && (fi->Action == 2 || fi->Action == 0) && fi->TableBufferLength) {
+        if (fi->ProviderSignature == 'RSMB' && fi->Action <= 2 && fi->TableBufferLength) {
             DbgInc(L"NqsiPath");
             PatchSmbios(fi, len);
         }
