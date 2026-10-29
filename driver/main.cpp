@@ -344,7 +344,8 @@ static PVOID OrigFor(PDEVICE_OBJECT dev, ULONG major)
     return NULL;
 }
 
-NTKERNELAPI PDEVICE_OBJECT NTAPI IoGetLowerDeviceObject(PDEVICE_OBJECT DeviceObject);
+typedef PDEVICE_OBJECT (*PFN_LOWER)(PDEVICE_OBJECT);
+static PFN_LOWER g_Lower;
 static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf)
 {
     UNICODE_STRING u;
@@ -352,19 +353,27 @@ static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf)
     PDEVICE_OBJECT dev = NULL, p, lo;
     ULONG hits = 0;
 
+    if (!g_Lower) {
+        UNICODE_STRING ln;
+        RtlInitUnicodeString(&ln, L"IoGetLowerDeviceObject");
+        g_Lower = (PFN_LOWER)MmGetSystemRoutineAddress(&ln);
+    }
+
     RtlInitUnicodeString(&u, name);
     if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return 0;
 
     for (p = dev; p; p = p->AttachedDevice)
         if (NT_SUCCESS(HookOnce(p->DriverObject, major, nf))) hits++;
 
-    p = dev;
-    while ((lo = IoGetLowerDeviceObject(p)) != NULL) {
-        if (NT_SUCCESS(HookOnce(lo->DriverObject, major, nf))) hits++;
+    if (g_Lower) {
+        p = dev;
+        while ((lo = g_Lower(p)) != NULL) {
+            if (NT_SUCCESS(HookOnce(lo->DriverObject, major, nf))) hits++;
+            if (p != dev) ObDereferenceObject(p);
+            p = lo;
+        }
         if (p != dev) ObDereferenceObject(p);
-        p = lo;
     }
-    if (p != dev) ObDereferenceObject(p);
 
     ObDereferenceObject(fo);
     return hits;
