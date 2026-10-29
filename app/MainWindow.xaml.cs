@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -13,6 +14,7 @@ namespace VnSpoofer
     public partial class MainWindow : Window
     {
         readonly DriverClient _drv = new DriverClient();
+        readonly List<Button> _profBtns = new List<Button>();
         State _st;
         Identity _id;
         int _cd;
@@ -21,12 +23,14 @@ namespace VnSpoofer
         public MainWindow()
         {
             InitializeComponent();
+            _profBtns.AddRange(new[] { ProfAll, ProfJav, ProfEac, ProfBe, ProfVg, ProfRc, ProfSolo });
             Native.Round(this);
             _st = State.Load();
 
             if (_st.Pending && _st.Id != null)
             {
                 _id = _st.Id;
+                RestoreToggles();
                 Nav(2);
                 _ = ResumeAsync();
             }
@@ -36,6 +40,7 @@ namespace VnSpoofer
                 _id = Identity.Random();
                 CaptureOriginals();
                 Fill();
+                SelectProfile("all");
                 Nav(0);
                 Log("Pret. Provider KDU en mode rotatif.", "#7C8797");
             }
@@ -114,12 +119,21 @@ namespace VnSpoofer
 
         async void Spoof_Click(object s, RoutedEventArgs e)
         {
-            BtnSpoof.IsEnabled = false;
+            BusyShow("Preparation", "Fermeture des sessions precedentes");
             try
             {
-                if (ChkCleanBefore.IsChecked == true) await Cleaner.RunAsync(Log);
-                if (!await EnsureMapped()) return;
+                await System.Threading.Tasks.Task.Delay(280);
 
+                if (ChkCleanBefore.IsChecked == true)
+                {
+                    BusyStep_("Nettoyage des traces", "Caches anti-triche, Prefetch, ARP, DNS");
+                    await Cleaner.RunAsync(Log);
+                }
+
+                BusyStep_("Mapping du driver", "Provider : " + CmbProvider.Text);
+                if (!await EnsureMapped()) { Log("Mapping echoue.", "#FF5C5C"); return; }
+
+                BusyStep_("Retour a l'etat d'origine", "Restauration avant nouvelle identite");
                 await _drv.RevertAsync();
                 IpSpoof.Revert(_st);
                 MonitorSpoof.Revert(_st);
@@ -133,6 +147,7 @@ namespace VnSpoofer
                 _st.Flags = (int)flags;
                 _st.Id = _id;
 
+                BusyStep_("Application de l'identite", "SMBIOS, disque, volume, MAC, GUID, GPU");
                 if (flags != 0 && !_drv.Apply(_id, flags)) { Log("IOCTL_APPLY echoue.", "#FF5C5C"); return; }
 
                 _st.Expected["uuid"] = _id.Uuid;
@@ -147,22 +162,23 @@ namespace VnSpoofer
 
                 if (SwIp.IsChecked == true) IpSpoof.Prepare(_st);
                 if (SwMon.IsChecked == true) { var _nmo = MonitorSpoof.Apply(_id, _st); if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo; }
-                if (SwMac.IsChecked == true) IpSpoof.RestartNic();
-                if (SwIp.IsChecked == true) { var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
+                if (SwMac.IsChecked == true) { BusyStep_("Redemarrage de la carte reseau", "Prise en compte de la nouvelle MAC"); IpSpoof.RestartNic(); }
+                if (SwIp.IsChecked == true) { BusyStep_("Renouvellement du bail", "DHCP"); var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
 
+                BusyStep_("Verification", "Controle des composants");
                 _st.Pending = true;
                 _st.Save();
+                Nav(2);
+                Refresh();
+                await System.Threading.Tasks.Task.Delay(320);
 
                 SetPill("SPOOFE", "#33D17A", "#0A0C0F");
                 TxtDashTitle.Text = "Spoof applique";
                 BtnRevert.IsEnabled = true;
                 Log("Spoof applique et identite sauvegardee.", "#33D17A");
                 TxtCountdown.Text = "Spoof actif. Controle ci-contre, puis lance le jeu.";
-                Nav(2);
-                Refresh();
-
             }
-            finally { BtnSpoof.IsEnabled = true; }
+            finally { BusyHide(); }
         }
 
         async System.Threading.Tasks.Task ResumeAsync()
@@ -278,19 +294,70 @@ namespace VnSpoofer
             catch { }
         }
 
-        void Profile_Click(object s, RoutedEventArgs e)
+        void SelectProfile(string p)
         {
-            string p = (s as FrameworkElement)?.Tag as string ?? "solo";
+            foreach (var b in _profBtns)
+                b.Background = (Brush)new BrushConverter().ConvertFromString((string)b.Tag == p ? "#1B2233" : "#12161E");
+
+            bool gpu = p == "all" || p == "solo" || p == "javelin" || p == "eac" || p == "battleye";
+            bool net = p == "all" || p == "solo";
+
             SwSmbios.IsChecked = true;
             SwDisk.IsChecked = true;
             SwVolume.IsChecked = true;
             SwMac.IsChecked = true;
             SwGuid.IsChecked = true;
-            SwGpu.IsChecked = true;
-            SwIp.IsChecked = true;
-            SwMon.IsChecked = true;
-            Nav(1);
-            Log($"Profil {p} charge : les 8 composants sont armes. Applique puis verifie avant de lancer le jeu.", "#33D17A");
+            SwGpu.IsChecked = gpu;
+            SwIp.IsChecked = net;
+            SwMon.IsChecked = net;
+
+            TxtProfDesc.Text = p switch
+            {
+                "all" => "Tout est arme, IP et EDID compris. Sert a verifier que la chaine complete fonctionne.",
+                "javelin" => "Javelin : SMBIOS, disque, volume, MAC, GUID, GPU. IP et EDID laisses de cote.",
+                "eac" => "EAC hashe un composite : tous les identifiants materiels doivent tomber ensemble.",
+                "battleye" => "BattlEye : identifiants materiels complets. Il voit aussi le pilote mappe, c'est la limite.",
+                "vanguard" => "Vanguard : registre, disque, volume, MAC, GUID. GPU laisse tel quel pour ne pas forcer de reinstallation.",
+                "ricochet" => "Ricochet : SMBIOS, disque, volume, MAC, GUID. Profil volontairement sobre.",
+                _ => "Aucun risque de detection : tout peut rester arme."
+            };
+            Log($"Profil {p} arme.", "#33D17A");
+        }
+
+        void RestoreToggles()
+        {
+            uint f = (uint)_st.Flags;
+            SwSmbios.IsChecked = (f & 0x04) != 0;
+            SwDisk.IsChecked = (f & 0x01) != 0;
+            SwVolume.IsChecked = (f & 0x02) != 0;
+            SwMac.IsChecked = (f & 0x08) != 0;
+            SwGuid.IsChecked = (f & 0x10) != 0;
+            SwGpu.IsChecked = (f & 0x20) != 0;
+            TxtProfDesc.Text = "Identite precedente reprise, interrupteurs restaures.";
+        }
+
+        void BusyShow(string step, string sub)
+        {
+            BusyStep.Text = step;
+            BusySub.Text = sub;
+            Busy.Visibility = Visibility.Visible;
+            BtnSpoof.IsEnabled = false;
+            BtnRevert.IsEnabled = false;
+            BtnReboot.IsEnabled = false;
+        }
+
+        void BusyStep_(string step, string sub) { BusyStep.Text = step; BusySub.Text = sub; }
+
+        void BusyHide()
+        {
+            Busy.Visibility = Visibility.Collapsed;
+            BtnReboot.IsEnabled = true;
+            BtnRevert.IsEnabled = _st != null && _st.Pending;
+        }
+
+        void Profile_Click(object s, RoutedEventArgs e)
+        {
+            SelectProfile((s as FrameworkElement)?.Tag as string ?? "all");
         }
         async void Clean_Click(object s, RoutedEventArgs e)
         {

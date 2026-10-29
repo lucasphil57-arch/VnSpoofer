@@ -344,39 +344,63 @@ static PVOID OrigFor(PDEVICE_OBJECT dev, ULONG major)
     return NULL;
 }
 
-typedef PDEVICE_OBJECT (*PFN_LOWER)(PDEVICE_OBJECT);
-static PFN_LOWER g_Lower;
-static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf)
+static void DbgStr(PCWSTR name, PCWSTR v);
+typedef PDEVICE_OBJECT (*PFN_BASE)(PDEVICE_OBJECT);
+static PFN_BASE g_Base;
+static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf, PCWSTR tag)
 {
     UNICODE_STRING u;
     PFILE_OBJECT fo = NULL;
-    PDEVICE_OBJECT dev = NULL, p, lo;
+    PDEVICE_OBJECT dev = NULL, base = NULL, p;
     ULONG hits = 0;
+    WCHAR path[512] = {0};
 
-    if (!g_Lower) {
-        UNICODE_STRING ln;
-        RtlInitUnicodeString(&ln, L"IoGetLowerDeviceObject");
-        g_Lower = (PFN_LOWER)MmGetSystemRoutineAddress(&ln);
+    if (!g_Base) {
+        UNICODE_STRING bn;
+        RtlInitUnicodeString(&bn, L"IoGetDeviceAttachmentBaseRef");
+        g_Base = (PFN_BASE)MmGetSystemRoutineAddress(&bn);
     }
 
     RtlInitUnicodeString(&u, name);
     if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return 0;
 
-    for (p = dev; p; p = p->AttachedDevice)
-        if (NT_SUCCESS(HookOnce(p->DriverObject, major, nf))) hits++;
-
-    if (g_Lower) {
-        p = dev;
-        while ((lo = g_Lower(p)) != NULL) {
-            if (NT_SUCCESS(HookOnce(lo->DriverObject, major, nf))) hits++;
-            if (p != dev) ObDereferenceObject(p);
-            p = lo;
+    base = g_Base ? g_Base(dev) : NULL;
+    p = base ? base : dev;
+    for (; p; p = p->AttachedDevice) {
+        if (NT_SUCCESS(HookOnce(p->DriverObject, major, nf))) {
+            hits++;
+            if (p->DriverObject->DriverName.Buffer)
+                AppendN(path, 512, p->DriverObject->DriverName.Buffer, p->DriverObject->DriverName.Length / 2);
+            Append(path, 512, L"|");
         }
-        if (p != dev) ObDereferenceObject(p);
     }
+    if (base) ObDereferenceObject(base);
 
+    DbgStr(tag, path);
     ObDereferenceObject(fo);
     return hits;
+}
+
+static void HookFsd(PCWSTR name, ULONG major, PVOID nf, PCWSTR tag)
+{
+    UNICODE_STRING u;
+    PFILE_OBJECT fo = NULL;
+    PDEVICE_OBJECT dev = NULL;
+    WCHAR path[256] = {0};
+
+    RtlInitUnicodeString(&u, name);
+    if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return;
+
+    __try {
+        if (dev->Vpb && dev->Vpb->DeviceObject) {
+            PDRIVER_OBJECT d = dev->Vpb->DeviceObject->DriverObject;
+            if (NT_SUCCESS(HookOnce(d, major, nf)) && d->DriverName.Buffer)
+                AppendN(path, 256, d->DriverName.Buffer, d->DriverName.Length / 2);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+
+    DbgStr(tag, path);
+    ObDereferenceObject(fo);
 }
 
 static void DbgInc(PCWSTR name);
@@ -878,13 +902,12 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
     if (c->Flags & SPOOF_DISK) {
         ULONG h = 0;
         WCHAR vn[40], nb[8];
-        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
-        h += StackHook(L"\\Device\\Harddisk0\\Partition0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
+        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskPath");
         for (int vi = 1; vi <= 8; vi++) {
             CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
             NumW(nb, 8, (ULONG)vi);
             Append(vn, 40, nb);
-            h += StackHook(vn, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
+            h += StackHook(vn, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskPath");
         }
         DbgDw(L"DiskDrv", h);
         DbgDw(L"DiskSt", 0);
@@ -898,9 +921,10 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
             CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
             NumW(nb, 8, (ULONG)vi);
             Append(vn, 40, nb);
-            h += StackHook(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol);
+            StackHook(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"VolPath");
+            HookFsd(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"FsdPath");
+            if (g_HkN) h = g_HkN;
         }
-        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol);
         DbgDw(L"VolDrv", h);
         DbgDw(L"VolSt", 0);
         if (h) g_HookVol = TRUE;
