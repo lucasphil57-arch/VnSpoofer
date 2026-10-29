@@ -344,6 +344,7 @@ static PVOID OrigFor(PDEVICE_OBJECT dev, ULONG major)
     return NULL;
 }
 
+NTKERNELAPI PDEVICE_OBJECT NTAPI IoGetLowerDeviceObject(PDEVICE_OBJECT DeviceObject);
 static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf)
 {
     UNICODE_STRING u;
@@ -590,19 +591,6 @@ static void DbgStr(PCWSTR name, PCWSTR v)
     if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
     RtlInitUnicodeString(&vn, name);
     ZwSetValueKey(h, &vn, 0, REG_SZ, (PVOID)v, (ULONG)((VnStrLenW(v) + 1) * sizeof(WCHAR)));
-    ZwClose(h);
-}
-static void DbgStr(PCWSTR name, PCWSTR v)
-{
-    UNICODE_STRING u, vn;
-    OBJECT_ATTRIBUTES oa;
-    HANDLE h;
-
-    RtlInitUnicodeString(&u, BK_KEY);
-    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-    if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
-    RtlInitUnicodeString(&vn, name);
-    ZwSetValueKey(h, &vn, 0, REG_SZ, (PVOID)v, ((ULONG)VnStrLenW(v) + 1) * sizeof(WCHAR));
     ZwClose(h);
 }
 
