@@ -326,11 +326,14 @@ static NTSTATUS HookDrv(PDRIVER_OBJECT d, ULONG major, PVOID nf, PVOID* of)
     d->MajorFunction[major] = (PDRIVER_DISPATCH)nf;
     return STATUS_SUCCESS;
 }
+static void DbgInc(PCWSTR name);
+
 static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
+    DbgInc(L"DiskDone");
     if (sp->Parameters.DeviceIoControl.IoControlCode != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
 
     PSTORAGE_PROPERTY_QUERY q = (PSTORAGE_PROPERTY_QUERY)irp->AssociatedIrp.SystemBuffer;
@@ -358,6 +361,7 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
     if (NT_SUCCESS(irp->IoStatus.Status)) {
         PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
+        DbgInc(L"VolDone");
         PVOID vb = irp->UserBuffer ? irp->UserBuffer : irp->AssociatedIrp.SystemBuffer;
         if (vb && sp->Parameters.QueryVolume.Length >= 12) {
             PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)vb;
@@ -638,40 +642,68 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
     return STATUS_SUCCESS;
 }
 
+static BOOLEAN PrefEq(PCWSTR a, ULONG alen, PCWSTR b, ULONG blen)
+{
+    if (!alen || blen < alen) return FALSE;
+    for (ULONG i = 0; i < alen; i++)
+        if (RtlUpcaseUnicodeChar(a[i]) != RtlUpcaseUnicodeChar(b[i])) return FALSE;
+    return TRUE;
+}
+
 static NTSTATUS GpuApply()
 {
     HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_ENUMERATE_SUB_KEYS, NULL);
     if (!root) return STATUS_UNSUCCESSFUL;
+    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_ENUMERATE_SUB_KEYS, NULL);
+    if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
 
     ULONG n = 0, i = 0, saved = 0;
     WCHAR path[420], dev[460], src[520], dst[540], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
         WCHAR md[300] = {0};
+        PWSTR mdp;
+        ULONG ml;
+
         CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
         if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) continue;
 
-        CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\", 460);
-        Append(dev, 460, md);
-        HANDLE dh = OpenAbs(dev, KEY_ENUMERATE_SUB_KEYS, NULL);
-        if (!dh) continue;
+        ml = (ULONG)VnStrLenW(md);
+        mdp = md;
+        if (ml > 4 && (md[0] == L'p' || md[0] == L'P') && md[3] == L'\\') { mdp = md + 4; ml -= 4; }
 
-        ULONG m = 0, k = 0;
-        while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
-            PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
-            CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); AppendN(src, 520, ib->Name, ib->NameLength / 2);
-            CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
-            if (NT_SUCCESS(GpuMove(src, dst))) {
-                NumW(cnt, 8, saved++);
-                RegSz(BK_KEY, cnt, src);
+        ULONG e = 0, m2 = 0;
+        while (NT_SUCCESS(ZwEnumerateKey(pci, e++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m2))) {
+            PKEY_BASIC_INFORMATION eb = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+            if (!PrefEq(mdp, ml, eb->Name, eb->NameLength / 2)) continue;
+
+            CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
+            AppendN(dev, 460, eb->Name, eb->NameLength / 2);
+
+            HANDLE dh = OpenAbs(dev, KEY_ENUMERATE_SUB_KEYS, NULL);
+            if (!dh) break;
+
+            ULONG m = 0, k = 0;
+            while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
+                PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+                CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); AppendN(src, 520, ib->Name, ib->NameLength / 2);
+                CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
+                if (NT_SUCCESS(GpuMove(src, dst))) {
+                    NumW(cnt, 8, saved++);
+                    RegSz(BK_KEY, cnt, src);
+                }
             }
+            ZwClose(dh);
+            break;
         }
-        ZwClose(dh);
     }
+    ZwClose(pci);
     ZwClose(root);
+    DbgDw(L"GpuSaved", saved);
     g_HookGpu = TRUE;
     return STATUS_SUCCESS;
-}static void GpuRevert()
+}
+static void GpuRevert()
 {
     WCHAR src[760], back[720], cnt[8];
     for (ULONG i = 0; i < 32; i++) {
@@ -734,8 +766,9 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
 
     if (c->Flags & SPOOF_DISK) {
         g_DrvDisk = DrvOfVolume(L"\\Device\\Harddisk0\\DR0");
-        if (NT_SUCCESS(HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, (PVOID*)&g_OrigDisk)))
-            g_HookDisk = TRUE;
+        { NTSTATUS hs = HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, (PVOID*)&g_OrigDisk);
+          DbgDw(L"DiskDrv", g_DrvDisk ? 1u : 0u); DbgDw(L"DiskSt", (ULONG)hs);
+          if (NT_SUCCESS(hs)) g_HookDisk = TRUE; }
     }
 
     if (c->Flags & SPOOF_VOLUME) {
@@ -744,8 +777,9 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
             CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40); { WCHAR nb[8]; NumW(nb, 8, (ULONG)vi); Append(vn, 40, nb); }
             g_DrvVol = DrvOfVolume(vn);
         }
-        if (NT_SUCCESS(HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol)))
-            g_HookVol = TRUE;
+        { NTSTATUS hs = HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol);
+          DbgDw(L"VolDrv", g_DrvVol ? 1u : 0u); DbgDw(L"VolSt", (ULONG)hs);
+          if (NT_SUCCESS(hs)) g_HookVol = TRUE; }
     }
 
     if (c->Flags & SPOOF_MAC) {

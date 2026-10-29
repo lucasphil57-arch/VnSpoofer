@@ -111,6 +111,8 @@ namespace VnSpoofer.Services
                 using var k = Registry.LocalMachine.OpenSubKey(
                     @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}");
                 if (k == null) return "";
+                using var pci = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI");
+                if (pci == null) return "";
                 foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
                 {
                     if (n.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
@@ -160,15 +162,20 @@ namespace VnSpoofer.Services
                 using var k = Registry.LocalMachine.OpenSubKey(
                     @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
                 if (k == null) return "";
+                using var pci = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI");
+                if (pci == null) return "";
                 foreach (var sub in k.GetSubKeyNames())
                 {
                     using var sk = k.OpenSubKey(sub);
-                    if (!(sk?.GetValue("MatchingDeviceId") is string md) || string.IsNullOrEmpty(md)) continue;
-                    var pci = md.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase) ? md.Substring(4) : md;
-                    using var ek = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI\" + pci);
-                    if (ek == null) continue;
-                    var inst = ek.GetSubKeyNames().FirstOrDefault();
-                    if (!string.IsNullOrEmpty(inst)) return inst;
+                    if (!(sk?.GetValue("MatchingDeviceId") is string md) || md.Length < 5) continue;
+                    var m = md.StartsWith(@"pci\", StringComparison.OrdinalIgnoreCase) ? md.Substring(4) : md;
+                    foreach (var n in pci.GetSubKeyNames())
+                    {
+                        if (!n.StartsWith(m, StringComparison.OrdinalIgnoreCase)) continue;
+                        using var ek = pci.OpenSubKey(n);
+                        var inst = ek?.GetSubKeyNames().FirstOrDefault();
+                        if (!string.IsNullOrEmpty(inst)) return inst;
+                    }
                 }
             }
             catch { }
