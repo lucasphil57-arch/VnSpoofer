@@ -137,6 +137,7 @@ namespace VnSpoofer
                 await _drv.RevertAsync();
                 IpSpoof.Revert(_st);
                 MonitorSpoof.Revert(_st);
+                MacReg.Restore(_st);
 
                 _st = new State();
                 CaptureOriginals();
@@ -148,6 +149,7 @@ namespace VnSpoofer
                 _st.Id = _id;
 
                 BusyStep_("Application de l'identite", "SMBIOS, disque, volume, MAC, GUID, GPU");
+                if (SwMac.IsChecked == true) MacReg.Backup(_st);
                 if (flags != 0 && !_drv.Apply(_id, flags)) { Log("IOCTL_APPLY echoue.", "#FF5C5C"); return; }
 
                 _st.Expected["uuid"] = _id.Uuid;
@@ -248,6 +250,7 @@ namespace VnSpoofer
             await _drv.RevertAsync();
             IpSpoof.Revert(_st);
             MonitorSpoof.Revert(_st);
+            MacReg.Restore(_st);
             State.Wipe();
             SetPill("INACTIF", "#1E242C", "#7C8797");
             TxtDashTitle.Text = "Aucun spoof actif";
