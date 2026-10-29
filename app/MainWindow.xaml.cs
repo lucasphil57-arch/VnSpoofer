@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -288,6 +289,15 @@ namespace VnSpoofer
             _drv.Stat();
             VerifyList.ItemsSource = rows;
             TxtVerifySum.Text = $"{ok} / {Keys.All.Length} composants conformes";
+
+            var bad = rows.Where(r => r.Mark != "OK").Select(r => r.Label).ToList();
+            if (bad.Count == 0) { AlertBox.Visibility = Visibility.Collapsed; TxtVerifySum.Foreground = (Brush)new BrushConverter().ConvertFromString("#33D17A"); }
+            else
+            {
+                TxtVerifySum.Foreground = (Brush)new BrushConverter().ConvertFromString("#FF5C5C");
+                AlertBox.Visibility = Visibility.Visible;
+                AlertText.Text = "Non applique : " + string.Join(", ", bad) + ". Redemarre puis reapplique, ne lance pas le jeu dans cet etat.";
+            }
         }
 
         void Refresh_Click(object s, RoutedEventArgs e) => Refresh();
