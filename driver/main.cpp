@@ -305,34 +305,75 @@ static PFN_DISPATCH g_OrigVol;
 static PDRIVER_OBJECT g_DrvDisk;
 static PDRIVER_OBJECT g_DrvVol;
 static BOOLEAN g_HookDisk, g_HookVol, g_HookMac, g_HookSmb, g_HookGpu;
-static volatile LONG g_DiskHits, g_VolHits;
+static volatile LONG g_DiskHits, g_VolHits, g_DiskQ, g_VolQ;
 
-static PDRIVER_OBJECT DrvOfVolume(PCWSTR name)
-{
-    UNICODE_STRING u;
-    RtlInitUnicodeString(&u, name);
-    PFILE_OBJECT fo = NULL;
-    PDEVICE_OBJECT dev = NULL;
-    if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return NULL;
-    // pas de remontee AttachedDevice : l IRP entre par le device nomme
-    PDRIVER_OBJECT d = dev->DriverObject;
-    ObDereferenceObject(fo);
-    return d;
-}
+#define MAX_HK 48
+typedef struct _HKENT { PDRIVER_OBJECT Drv; ULONG Major; PVOID Orig; } HKENT;
+static HKENT g_Hk[MAX_HK];
+static ULONG g_HkN;
 
-static NTSTATUS HookDrv(PDRIVER_OBJECT d, ULONG major, PVOID nf, PVOID* of)
+static NTSTATUS HookOnce(PDRIVER_OBJECT d, ULONG major, PVOID nf)
 {
-    if (!d) return STATUS_UNSUCCESSFUL;
-    *of = (PVOID)d->MajorFunction[major];
+    if (!d || !IsKernelPtr(d)) return STATUS_UNSUCCESSFUL;
+    for (ULONG i = 0; i < g_HkN; i++)
+        if (g_Hk[i].Drv == d && g_Hk[i].Major == major) return STATUS_ALREADY_REGISTERED;
+    if (g_HkN >= MAX_HK) return STATUS_INSUFFICIENT_RESOURCES;
+    if (!IsKernelPtr((PVOID)d->MajorFunction[major])) return STATUS_UNSUCCESSFUL;
+
+    g_Hk[g_HkN].Drv   = d;
+    g_Hk[g_HkN].Major = major;
+    g_Hk[g_HkN].Orig  = (PVOID)d->MajorFunction[major];
+    g_HkN++;
     d->MajorFunction[major] = (PDRIVER_DISPATCH)nf;
     return STATUS_SUCCESS;
 }
+
+static void UnhookAll(void)
+{
+    while (g_HkN) {
+        g_HkN--;
+        g_Hk[g_HkN].Drv->MajorFunction[g_Hk[g_HkN].Major] = (PDRIVER_DISPATCH)g_Hk[g_HkN].Orig;
+    }
+}
+
+static PVOID OrigFor(PDEVICE_OBJECT dev, ULONG major)
+{
+    PDRIVER_OBJECT d = dev->DriverObject;
+    for (ULONG i = 0; i < g_HkN; i++)
+        if (g_Hk[i].Drv == d && g_Hk[i].Major == major) return g_Hk[i].Orig;
+    return NULL;
+}
+
+static ULONG StackHook(PCWSTR name, ULONG major, PVOID nf)
+{
+    UNICODE_STRING u;
+    PFILE_OBJECT fo = NULL;
+    PDEVICE_OBJECT dev = NULL, p, lo;
+    ULONG hits = 0;
+
+    RtlInitUnicodeString(&u, name);
+    if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return 0;
+
+    for (p = dev; p; p = p->AttachedDevice)
+        if (NT_SUCCESS(HookOnce(p->DriverObject, major, nf))) hits++;
+
+    p = dev;
+    while ((lo = IoGetLowerDeviceObject(p)) != NULL) {
+        if (NT_SUCCESS(HookOnce(lo->DriverObject, major, nf))) hits++;
+        if (p != dev) ObDereferenceObject(p);
+        p = lo;
+    }
+    if (p != dev) ObDereferenceObject(p);
+
+    ObDereferenceObject(fo);
+    return hits;
+}
+
 static void DbgInc(PCWSTR name);
 
 static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev);
-    InterlockedIncrement(&g_DiskHits);
     if ((ULONG)(ULONG_PTR)c != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
 
@@ -347,19 +388,27 @@ static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 
 static NTSTATUS HookDisk(PDEVICE_OBJECT dev, PIRP irp)
 {
+    PFN_DISPATCH orig;
+
+    InterlockedIncrement(&g_DiskHits);
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
     ULONG code = sp->Parameters.DeviceIoControl.IoControlCode;
     if (sp->MajorFunction == IRP_MJ_DEVICE_CONTROL && code == IOCTL_STORAGE_QUERY_PROPERTY) {
+        InterlockedIncrement(&g_DiskQ);
         if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
         IoSetCompletionRoutine(irp, DiskDone, (PVOID)(ULONG_PTR)code, TRUE, TRUE, TRUE);
     }
-    return g_OrigDisk(dev, irp);
+    orig = (PFN_DISPATCH)OrigFor(dev, IRP_MJ_DEVICE_CONTROL);
+    if (orig) return orig(dev, irp);
+    irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
+    irp->IoStatus.Information = 0;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    return STATUS_INVALID_DEVICE_REQUEST;
 }
 
 static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
     UNREFERENCED_PARAMETER(dev);
-    InterlockedIncrement(&g_VolHits);
     if ((ULONG)(ULONG_PTR)c != FileFsVolumeInformation) return STATUS_SUCCESS;
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
     if (irp->IoStatus.Information < sizeof(FILE_FS_VOLUME_INFORMATION)) return STATUS_SUCCESS;
@@ -372,14 +421,23 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 
 static NTSTATUS HookVol(PDEVICE_OBJECT dev, PIRP irp)
 {
+    PFN_DISPATCH orig;
+
+    InterlockedIncrement(&g_VolHits);
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-    if (sp->Parameters.QueryVolume.FsInformationClass == FileFsVolumeInformation) {
+    if (sp->MajorFunction == IRP_MJ_QUERY_VOLUME_INFORMATION &&
+        sp->Parameters.QueryVolume.FsInformationClass == FileFsVolumeInformation) {
+        InterlockedIncrement(&g_VolQ);
         if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
         IoSetCompletionRoutine(irp, VolDone, (PVOID)(ULONG_PTR)FileFsVolumeInformation, TRUE, TRUE, TRUE);
     }
-    return g_OrigVol(dev, irp);
+    orig = (PFN_DISPATCH)OrigFor(dev, IRP_MJ_QUERY_VOLUME_INFORMATION);
+    if (orig) return orig(dev, irp);
+    irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
+    irp->IoStatus.Information = 0;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    return STATUS_INVALID_DEVICE_REQUEST;
 }
-
 static NTSTATUS HookNdi(HANDLE h, HANDLE ev, PIO_APC_ROUTINE a, PVOID ac,
                         PIO_STATUS_BLOCK io, ULONG code, PVOID in, ULONG il,
                         PVOID out, ULONG ol)
@@ -522,6 +580,32 @@ static NTSTATUS HookNqsi(SYSTEM_INFORMATION_CLASS c, PVOID buf, ULONG len, PULON
 
     return st;
 }
+static void DbgStr(PCWSTR name, PCWSTR v)
+{
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+    RtlInitUnicodeString(&u, BK_KEY);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
+    RtlInitUnicodeString(&vn, name);
+    ZwSetValueKey(h, &vn, 0, REG_SZ, (PVOID)v, (ULONG)((VnStrLenW(v) + 1) * sizeof(WCHAR)));
+    ZwClose(h);
+}
+static void DbgStr(PCWSTR name, PCWSTR v)
+{
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+
+    RtlInitUnicodeString(&u, BK_KEY);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwCreateKey(&h, KEY_ALL_ACCESS, &oa, 0, NULL, 0, NULL))) return;
+    RtlInitUnicodeString(&vn, name);
+    ZwSetValueKey(h, &vn, 0, REG_SZ, (PVOID)v, ((ULONG)VnStrLenW(v) + 1) * sizeof(WCHAR));
+    ZwClose(h);
+}
+
 static NTSTATUS RegSz(PCWSTR path, PCWSTR val, PCWSTR data)
 {
     return RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, path, val, REG_SZ,
@@ -659,7 +743,7 @@ static NTSTATUS GpuApply()
     DbgDw(L"GpuPci", pci ? 1u : 0u);
     if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
 
-    ULONG n = 0, i = 0, saved = 0;
+    ULONG n = 0, i = 0, saved = 0, dmp = 0, pc = 0;
     WCHAR path[420], dev[460], src[520], dst[540], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
@@ -670,14 +754,31 @@ static NTSTATUS GpuApply()
         CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
         if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) continue;
         DbgInc(L"GpuMd");
-
         ml = (ULONG)VnStrLenW(md);
+        if (dmp < 3) {
+            WCHAR dn[16];
+            CopyW(dn, 16, L"GpuMdTxt", 16);
+            if (dmp) { WCHAR sx[4]; NumW(sx, 4, dmp); Append(dn, 16, sx); }
+            DbgStr(dn, md);
+            DbgDw(L"GpuMl", ml);
+            dmp++;
+        }
         mdp = md;
         if (ml > 4 && (md[0] == L'p' || md[0] == L'P') && md[3] == L'\\') { mdp = md + 4; ml -= 4; }
 
-        ULONG e = 0, m2 = 0;
+        ULONG e = 0, m2 = 0, kmp = 0;
         while (NT_SUCCESS(ZwEnumerateKey(pci, e++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m2))) {
             PKEY_BASIC_INFORMATION eb = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+            pc++;
+            if (kmp < 3) {
+                WCHAR kt[128] = {0};
+                WCHAR kn[16];
+                CopyW(kn, 16, L"GpuKeyTxt", 16);
+                if (kmp) { WCHAR sx[4]; NumW(sx, 4, kmp); Append(kn, 16, sx); }
+                CopyW(kt, 128, eb->Name, eb->NameLength / 2);
+                DbgStr(kn, kt);
+                kmp++;
+            }
             if (!PrefEq(mdp, ml, eb->Name, eb->NameLength / 2)) continue;
 
             CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
@@ -701,6 +802,7 @@ static NTSTATUS GpuApply()
             break;
         }
     }
+    DbgDw(L"GpuPciN", pc);
     ZwClose(pci);
     ZwClose(root);
     DbgDw(L"GpuSaved", saved);
@@ -733,7 +835,7 @@ static void MacHex(PWSTR out)
 static void MacRegApply()
 {
     WCHAR hex[16], path[420], cnt[8];
-    ULONG n = 0, i = 0, saved = 0;
+    ULONG n = 0, i = 0, saved = 0, dmp = 0, pc = 0;
 
     MacHex(hex);
     HANDLE root = OpenAbs(NET_CLASS, KEY_ENUMERATE_SUB_KEYS, NULL);
@@ -769,23 +871,35 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
     RtlCopyMemory(&g_Cfg, c, sizeof(SPOOF_CFG));
 
     if (c->Flags & SPOOF_DISK) {
-        g_DrvDisk = DrvOfVolume(L"\\Device\\Harddisk0\\DR0");
-        { NTSTATUS hs = HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, (PVOID*)&g_OrigDisk);
-          DbgDw(L"DiskDrv", g_DrvDisk ? 1u : 0u); DbgDw(L"DiskSt", (ULONG)hs);
-          if (NT_SUCCESS(hs)) g_HookDisk = TRUE; }
+        ULONG h = 0;
+        WCHAR vn[40], nb[8];
+        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
+        h += StackHook(L"\\Device\\Harddisk0\\Partition0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
+        for (int vi = 1; vi <= 8; vi++) {
+            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
+            NumW(nb, 8, (ULONG)vi);
+            Append(vn, 40, nb);
+            h += StackHook(vn, IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk);
+        }
+        DbgDw(L"DiskDrv", h);
+        DbgDw(L"DiskSt", 0);
+        if (h) g_HookDisk = TRUE;
     }
 
     if (c->Flags & SPOOF_VOLUME) {
-        for (int vi = 1; vi <= 4 && !g_DrvVol; vi++) {
-            WCHAR vn[40];
-            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40); { WCHAR nb[8]; NumW(nb, 8, (ULONG)vi); Append(vn, 40, nb); }
-            g_DrvVol = DrvOfVolume(vn);
+        ULONG h = 0;
+        WCHAR vn[40], nb[8];
+        for (int vi = 1; vi <= 8; vi++) {
+            CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
+            NumW(nb, 8, (ULONG)vi);
+            Append(vn, 40, nb);
+            h += StackHook(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol);
         }
-        { NTSTATUS hs = HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, (PVOID*)&g_OrigVol);
-          DbgDw(L"VolDrv", g_DrvVol ? 1u : 0u); DbgDw(L"VolSt", (ULONG)hs);
-          if (NT_SUCCESS(hs)) g_HookVol = TRUE; }
+        h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol);
+        DbgDw(L"VolDrv", h);
+        DbgDw(L"VolSt", 0);
+        if (h) g_HookVol = TRUE;
     }
-
     if (c->Flags & SPOOF_MAC) {
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtDeviceIoControlFile");
@@ -817,8 +931,7 @@ static NTSTATUS DoRevert()
     if (g_HookSmb) { DetourRemove(&g_DtNqsi); g_HookSmb = FALSE; }
     if (g_HookMac) { DetourRemove(&g_DtNdi); g_HookMac = FALSE; }
     if (g_Cfg.Flags & SPOOF_MAC) MacRegRevert();
-    if (g_HookVol) { HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)g_OrigVol, (PVOID*)&g_OrigVol); g_HookVol = FALSE; }
-    if (g_HookDisk) { HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)g_OrigDisk, (PVOID*)&g_OrigDisk); g_HookDisk = FALSE; }
+    if (g_HookVol || g_HookDisk) { UnhookAll(); g_HookVol = FALSE; g_HookDisk = FALSE; }
     if (g_Cfg.Flags & SPOOF_GUID) GuidRevert();
     g_Applied = FALSE;
     return STATUS_SUCCESS;
@@ -840,7 +953,7 @@ static NTSTATUS Dispatch(PDEVICE_OBJECT dev, PIRP irp)
             st = DoRevert();
         } else if (code == IOCTL_STATE && sp->Parameters.DeviceIoControl.OutputBufferLength >= 1) {
             *(PUCHAR)irp->AssociatedIrp.SystemBuffer = g_Applied ? 1 : 0;
-            DbgDw(L"DiskHits", (ULONG)g_DiskHits); DbgDw(L"VolHits", (ULONG)g_VolHits);
+            DbgDw(L"DiskHits", (ULONG)g_DiskHits); DbgDw(L"VolHits", (ULONG)g_VolHits); DbgDw(L"DiskQ", (ULONG)g_DiskQ); DbgDw(L"VolQ", (ULONG)g_VolQ);
             out = 1;
             st = STATUS_SUCCESS;
         }
