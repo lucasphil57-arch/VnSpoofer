@@ -145,9 +145,10 @@ namespace VnSpoofer
                 _st.Expected["guid"] = _id.Guid;
                 if (SwGpu.IsChecked == true && _st.Original.TryGetValue("gpu", out var _go) && !string.IsNullOrEmpty(_go)) _st.Expected["gpu"] = _go + "-SPOOF";
 
-                if (SwIp.IsChecked == true) { var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
+                if (SwIp.IsChecked == true) IpSpoof.Prepare(_st);
                 if (SwMon.IsChecked == true) { var _nmo = MonitorSpoof.Apply(_id, _st); if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo; }
                 if (SwMac.IsChecked == true) IpSpoof.RestartNic();
+                if (SwIp.IsChecked == true) { var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
 
                 _st.Pending = true;
                 _st.Save();

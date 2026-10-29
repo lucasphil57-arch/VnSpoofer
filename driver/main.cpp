@@ -846,6 +846,14 @@ static void MacRegApply()
         WCHAR id[64] = {0};
         CopyW(path, 420, NET_CLASS, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
         if (!NT_SUCCESS(RegRead(path, L"NetCfgInstanceId", id, 64)) || !id[0]) continue;
+        {
+            WCHAR np[460];
+            HANDLE nh;
+            CopyW(np, 460, path, 460); Append(np, 460, L"\\Ndi\\Params\\NetworkAddress");
+            nh = OpenAbs(np, KEY_READ, NULL);
+            if (!nh) continue;
+            ZwClose(nh);
+        }
         RegSz(path, L"NetworkAddress", hex);
         NumW(cnt, 8, saved++);
         RegSz(BK_KEY, cnt, path);

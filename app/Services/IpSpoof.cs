@@ -33,10 +33,10 @@ namespace VnSpoofer.Services
             return $"{(m >> 24) & 255}.{(m >> 16) & 255}.{(m >> 8) & 255}.{m & 255}";
         }
 
-        public static string Apply(State st)
+        public static void Prepare(State st)
         {
             var c = Current();
-            if (c.name == null) return "";
+            if (c.name == null) return;
 
             st.Original["ip:name"] = c.name;
             st.Original["ip:dhcp"] = c.dhcp ? "1" : "0";
@@ -45,25 +45,31 @@ namespace VnSpoofer.Services
             st.Original["ip:gw"] = c.gw;
             st.Original["ip:dns"] = c.dns;
 
-            var oct = c.ip.Split('.');
-            var rnd = new Random();
-            int host;
-            do { host = rnd.Next(20, 250); } while ($"{oct[0]}.{oct[1]}.{oct[2]}.{host}" == c.ip);
-            string neu = $"{oct[0]}.{oct[1]}.{oct[2]}.{host}";
-            string mask = Mask(c.prefix);
+            Sh("netsh", $"interface ipv4 set address name=\"{c.name}\" dhcp");
+            Sh("netsh", $"interface ipv4 set dnsservers name=\"{c.name}\" dhcp");
+        }
 
-            Sh("netsh", $"interface ipv4 set address name=\"{c.name}\" static {neu} {mask} {c.gw}");
-            if (c.dns.Length > 0)
-                Sh("netsh", $"interface ipv4 set dnsservers name=\"{c.name}\" static {c.dns} primary");
+        public static string Apply(State st)
+        {
+            if (!st.Original.TryGetValue("ip:name", out var name)) return "";
+            st.Original.TryGetValue("ip:addr", out var old);
 
-for (int i = 0; i < 40; i++)
+            for (int round = 0; round < 3; round++)
             {
-                var cur = Current();
-                if (cur.ip == neu) break;
-                System.Threading.Thread.Sleep(150);
+                Sh("ipconfig", "/release \"" + name + "\"");
+                Sh("ipconfig", "/renew \"" + name + "\"");
+
+                for (int i = 0; i < 25; i++)
+                {
+                    var cur = Current();
+                    if (cur.name != null && !string.IsNullOrEmpty(cur.ip) && cur.ip != old)
+                        return cur.ip;
+                    System.Threading.Thread.Sleep(200);
+                }
             }
 
-            return neu;
+            var last = Current();
+            return last.ip ?? "";
         }
 
         public static void Revert(State st)
