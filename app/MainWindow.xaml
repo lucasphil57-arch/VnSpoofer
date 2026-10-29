@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="v7Zusanc" Height="740" Width="1080" WindowStartupLocation="CenterScreen"
-        WindowStyle="None" ResizeMode="CanMinimize" Background="{StaticResource Bg}">
+        Loaded="Window_Loaded" WindowStyle="None" ResizeMode="CanMinimize" Background="{StaticResource Bg}">
   <Window.Resources>
     <Style x:Key="ProfCard" TargetType="Button">
       <Setter Property="Background" Value="#12161E"/>
@@ -279,7 +279,6 @@
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Ce qu'il lit : SMBIOS et UUID systeme, series disque et volume, MAC, MachineGuid, et la cle Enum du GPU. Javelin charge son pilote au demarrage du jeu et peut relire le materiel en direct."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre : un driver deja mappe squatte le nom de device et le nouveau mapping echoue. 2. Ferme les outils noyau (RGB, monitoring, overclock). 3. Choisis ce profil, applique. 4. Onglet Verification : les lignes doivent etre vertes, une seule ligne rouge suffit a faire correspondre l'empreinte. 5. Lance Apex."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="A savoir : Apex n'exige ni Secure Boot ni TPM. Battlefield 6 et les FC les exigent, et refusent de demarrer si l'un est desactive. Ne redemarre pas pendant la session, sinon l'identite revient a l'originale."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="javelin" Click="Profile_Click"/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -289,7 +288,6 @@
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="EAC combine user-mode et noyau et hashe un composite : SMBIOS, disque, volume, MAC, MachineGuid. Un seul identifiant inchange suffit a faire correspondre l'empreinte, donc tous les composants materiels doivent etre actifs en meme temps."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Ferme les overlays et tout autre spoofer. 3. Arme ce profil, applique. 4. Verifie : 100 pourcent de lignes vertes. 5. Lance le jeu. Pour Rust, lance via Steam, pas via un raccourci modifie."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Si une seule ligne reste rouge, l'empreinte n'est pas neuve : recommence apres un redemarrage plutot que de lancer le jeu."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="eac" Click="Profile_Click"/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -298,7 +296,6 @@
                 <TextBlock Text="Rainbow Six Siege, PUBG, Escape from Tarkov, DayZ, Arma Reforger" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="BattlEye inspecte en plus les handles ouverts et la liste des pilotes charges. Un driver mappe manuellement figure dans cette liste : c'est la limite principale, aucun spoof d'identite ne la contourne."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Ne garde aucun autre outil noyau ouvert. 3. Arme ce profil, applique, verifie. 4. Lance le jeu. Pour Tarkov, ferme le launcher Battlestate avant d'appliquer, il garde sinon une session ouverte."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="battleye" Click="Profile_Click"/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -307,7 +304,6 @@
                 <TextBlock Text="Valorant, League of Legends" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="vgk.sys se charge au demarrage de Windows, donc avant nous, et a deja pu lire le materiel. C'est l'anti-triche le plus hostile au mapping manuel. Traite le spoof comme partiel : compte sur le registre et le disque, pas sur le SMBIOS."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Arme ce profil, applique, verifie. 3. Lance Valorant. Vanguard exige Secure Boot et TPM 2.0 actifs : si le jeu refuse de demarrer, ce n'est pas le spoof, c'est le BIOS. Le GPU n'est pas renomme sur ce profil, le renommage peut forcer une reinstallation du pilote graphique."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="vanguard" Click="Profile_Click"/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
@@ -316,7 +312,6 @@
                 <TextBlock Text="Call of Duty Modern Warfare, Warzone, Black Ops" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Ricochet relit le materiel cote noyau et s'appuie sur TPM et Secure Boot. Meme limite que Vanguard : le SMBIOS est le maillon faible. Le profil reste volontairement sobre, sans GPU ni IP."/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Ferme Battle.net et le launcher CoD. 3. Arme ce profil, applique, verifie. 4. Lance le jeu. Ne redemarre pas pendant la session."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="ricochet" Click="Profile_Click"/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}">
@@ -324,7 +319,6 @@
                 <TextBlock Text="SANS ANTI-TRICHE" FontSize="15" FontWeight="SemiBold"/>
                 <TextBlock Text="Jeux solo, Steam hors ligne, emulateurs" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Aucun risque de detection. Tous les composants peuvent rester armes, IP et EDID compris : le spoof est purement cosmetique et sert a tester que la chaine complete fonctionne."/>
-                <Button Content="Armer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="solo" Click="Profile_Click"/>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -347,7 +341,26 @@
         <TextBlock Text="v2.3" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
       </Grid>
     </Border>
-    <Grid x:Name="Busy" Grid.RowSpan="3" Background="#D908090D" Visibility="Collapsed" Panel.ZIndex="60">
+    <Grid x:Name="Splash" Grid.RowSpan="3" Panel.ZIndex="80">
+      <Grid.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#0A0C0F" Offset="0"/>
+          <GradientStop Color="#101826" Offset="0.55"/>
+          <GradientStop Color="#0A0C0F" Offset="1"/>
+        </LinearGradientBrush>
+      </Grid.Background>
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource AccentGrad}" HorizontalAlignment="Center">
+          <TextBlock Text="v7" FontWeight="Bold" FontSize="22" Foreground="#08090D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="v7Zusanc" FontSize="30" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,18,0,0"/>
+        <TextBlock Text="SPOOFER TEMPORAIRE - HWID - MULTI-JEUX" Style="{StaticResource Mono}" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+        <Border Width="220" Height="3" CornerRadius="2" Background="#1B2230" Margin="0,26,0,0">
+          <Border x:Name="SplashBar" Width="40" Height="3" CornerRadius="2" Background="{StaticResource Accent}" HorizontalAlignment="Left"/>
+        </Border>
+        <TextBlock Text="Bienvenue. Tout est reversible, rien n'est ecrit sur disque." FontSize="11.5" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+      </StackPanel>
+    </Grid>    <Grid x:Name="Busy" Grid.RowSpan="3" Background="#D908090D" Visibility="Collapsed" Panel.ZIndex="60">
       <Border Width="440" Style="{StaticResource Card}" VerticalAlignment="Center" HorizontalAlignment="Center">
         <StackPanel>
           <TextBlock Text="SPOOF EN COURS" Style="{StaticResource Mono}"/>

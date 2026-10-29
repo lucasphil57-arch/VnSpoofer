@@ -807,6 +807,30 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
     return STATUS_SUCCESS;
 }
 
+static BOOLEAN RegMultiFirst(PCWSTR path, PCWSTR val, PWSTR out, ULONG cch)
+{
+    UNICODE_STRING u, vn;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+    UCHAR buf[700];
+    PKEY_VALUE_PARTIAL_INFORMATION kv = (PKEY_VALUE_PARTIAL_INFORMATION)buf;
+    ULONG sz = 0;
+    BOOLEAN ok = FALSE;
+
+    RtlInitUnicodeString(&u, path);
+    InitializeObjectAttributes(&oa, &u, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwOpenKey(&h, KEY_READ, &oa))) return FALSE;
+
+    RtlInitUnicodeString(&vn, val);
+    if (NT_SUCCESS(ZwQueryValueKey(h, &vn, KeyValuePartialInformation, kv, sizeof(buf), &sz))
+        && (kv->Type == REG_MULTI_SZ || kv->Type == REG_SZ) && kv->DataLength >= 2) {
+        CopyW(out, cch, (PWSTR)kv->Data, cch);
+        ok = out[0] != 0;
+    }
+    ZwClose(h);
+    return ok;
+}
+
 static BOOLEAN PrefEq(PCWSTR a, ULONG alen, PCWSTR b, ULONG blen)
 {
     if (!alen || blen < alen) return FALSE;
@@ -873,7 +897,17 @@ static NTSTATUS GpuApply()
         ULONG ml;
 
         CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
-        if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) continue;
+        if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) {
+            if (!RegMultiFirst(path, L"HardwareID", md, 300)) continue;
+        } else {
+            ULONG amp = 0;
+            for (ULONG i = 0; md[i]; i++) if (md[i] == L'&') { amp = 1; break; }
+            if (!amp) {
+                WCHAR hw[300] = {0};
+                if (!RegMultiFirst(path, L"HardwareID", hw, 300)) continue;
+                CopyW(md, 300, hw, 300);
+            }
+        }
         DbgInc(L"GpuMd");
         ml = (ULONG)VnStrLenW(md);
         if (dmp < 3) {

@@ -46,6 +46,16 @@ namespace VnSpoofer
             }
         }
 
+        async void Window_Loaded(object s, RoutedEventArgs e)
+        {
+            SplashBar.BeginAnimation(WidthProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(40, 220, TimeSpan.FromMilliseconds(1900)));
+            await System.Threading.Tasks.Task.Delay(2150);
+            var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(420));
+            fade.Completed += (a, b) => Splash.Visibility = Visibility.Collapsed;
+            Splash.BeginAnimation(OpacityProperty, fade);
+        }
+
         void Drag(object s, MouseButtonEventArgs e) { try { DragMove(); } catch { } }
         void Min_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
         void Close_Click(object s, RoutedEventArgs e) => Close();

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.Win32;
 
 namespace VnSpoofer.Services
@@ -7,9 +8,19 @@ namespace VnSpoofer.Services
     {
         const string ClassKey = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
 
+        static string File_()
+        {
+            var d = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VnSpoofer");
+            Directory.CreateDirectory(d);
+            return Path.Combine(d, "macbackup.txt");
+        }
+
         public static void Backup(State st)
         {
-            int i = 0;
+            var f = File_();
+            if (File.Exists(f)) return;
+
+            var lines = new System.Collections.Generic.List<string>();
             try
             {
                 using (var root = Registry.LocalMachine.OpenSubKey(ClassKey, false))
@@ -25,28 +36,31 @@ namespace VnSpoofer.Services
                                 if (ndi == null) continue;
                             }
                             var v = k.GetValue("NetworkAddress") as string;
-                            st.Original["mac:" + i++] = name + "|" + (v ?? "");
+                            lines.Add(name + "|" + (v ?? ""));
                         }
                     }
                 }
+                File.WriteAllLines(f, lines);
             }
             catch { }
         }
 
         public static void Restore(State st)
         {
+            var f = File_();
+            if (!File.Exists(f)) return;
+
             try
             {
                 using (var root = Registry.LocalMachine.OpenSubKey(ClassKey, true))
                 {
                     if (root == null) return;
-                    foreach (var pair in st.Original)
+                    foreach (var line in File.ReadAllLines(f))
                     {
-                        if (!pair.Key.StartsWith("mac:")) continue;
-                        int bar = pair.Value.IndexOf('|');
+                        int bar = line.IndexOf('|');
                         if (bar < 0) continue;
-                        string name = pair.Value.Substring(0, bar);
-                        string old = pair.Value.Substring(bar + 1);
+                        string name = line.Substring(0, bar);
+                        string old = line.Substring(bar + 1);
                         using (var k = root.OpenSubKey(name, true))
                         {
                             if (k == null) continue;
@@ -55,6 +69,7 @@ namespace VnSpoofer.Services
                         }
                     }
                 }
+                File.Delete(f);
             }
             catch { }
         }
