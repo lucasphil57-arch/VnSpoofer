@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.Win32;
@@ -71,7 +71,7 @@ namespace VnSpoofer.Services
                     e[127] = (byte)(256 - (sum & 0xFF));
 
                     ik.SetValue("EDID", e, RegistryValueKind.Binary);
-                    shown = Decode(e);
+                    if (shown.Length == 0) shown = Decode(e);
                 }
             }
             return shown;

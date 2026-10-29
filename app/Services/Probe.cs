@@ -104,7 +104,74 @@ namespace VnSpoofer.Services
             catch { return ""; }
         }
 
-        public static string Read(string key)
+                static string MacReg()
+        {
+            try
+            {
+                using var k = Registry.LocalMachine.OpenSubKey(
+                    @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}");
+                if (k == null) return "";
+                foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (n.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                    if (n.GetPhysicalAddress().GetAddressBytes().Length != 6) continue;
+                    foreach (var sub in k.GetSubKeyNames())
+                    {
+                        using var sk = k.OpenSubKey(sub);
+                        if (!(sk?.GetValue("NetCfgInstanceId") is string id)) continue;
+                        if (!string.Equals(id, n.Id, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (sk.GetValue("NetworkAddress") is string na && na.Length == 12)
+                            return string.Join(":", Enumerable.Range(0, 6).Select(i => na.Substring(i * 2, 2).ToUpperInvariant()));
+                    }
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        static string MacIo()
+        {
+            try
+            {
+                foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (n.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                    if (n.GetPhysicalAddress().GetAddressBytes().Length != 6) continue;
+                    var ip = n.GetIPProperties().UnicastAddresses
+                        .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
+                    if (ip == null) continue;
+                    using var s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                    s.Bind(new System.Net.IPEndPoint(ip.Address, 0));
+                    var oid = BitConverter.GetBytes(0x01010102u);
+                    var o = new byte[6];
+                    uint r;
+                    if (Native.DeviceIoControl((IntPtr)s.Handle, 0x00170002, oid, 4, o, 6, out r, IntPtr.Zero) && r >= 6)
+                        return BitConverter.ToString(o).Replace("-", ":");
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        static string GpuId()
+        {
+            try
+            {
+                using var k = Registry.LocalMachine.OpenSubKey(
+                    @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+                if (k == null) return "";
+                foreach (var sub in k.GetSubKeyNames())
+                {
+                    using var sk = k.OpenSubKey(sub);
+                    if (!(sk?.GetValue("DeviceInstance") is string di) || string.IsNullOrEmpty(di)) continue;
+                    var parts = di.Split('\\');
+                    if (parts.Length >= 2) return parts[parts.Length - 1];
+                }
+            }
+            catch { }
+            return "";
+        }
+public static string Read(string key)
         {
             try
             {
@@ -117,21 +184,32 @@ namespace VnSpoofer.Services
                     case "disk": return DiskSerial();
                     case "volume": return Native.VolumeSerial("C:\\");
                     case "mac":
-                        return NetworkInterface.GetAllNetworkInterfaces()
-                            .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback
-                                     && n.GetPhysicalAddress().GetAddressBytes().Length == 6)
-                            .Select(n => BitConverter.ToString(n.GetPhysicalAddress().GetAddressBytes()).Replace("-", ":"))
-                            .FirstOrDefault() ?? "";
+                        {
+                            var m = MacReg();
+                            if (m.Length == 0) m = MacIo();
+                            if (m.Length != 0) return m;
+                            return NetworkInterface.GetAllNetworkInterfaces()
+                                .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                                         && n.GetPhysicalAddress().GetAddressBytes().Length == 6)
+                                .Select(n => BitConverter.ToString(n.GetPhysicalAddress().GetAddressBytes()).Replace("-", ":"))
+                                .FirstOrDefault() ?? "";
+                        }
+                    case "gpu": return GpuId();
                     case "guid":
                         return Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography",
                             "MachineGuid", "")?.ToString() ?? "";
                     case "ip":
-                        return NetworkInterface.GetAllNetworkInterfaces()
-                            .Where(n => n.OperationalStatus == OperationalStatus.Up
-                                     && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-                            .SelectMany(n => n.GetIPProperties().UnicastAddresses)
-                            .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
-                            .Select(a => a.Address.ToString()).FirstOrDefault() ?? "";
+                        {
+                            var ups = NetworkInterface.GetAllNetworkInterfaces()
+                                .Where(n => n.OperationalStatus == OperationalStatus.Up
+                                         && n.NetworkInterfaceType != NetworkInterfaceType.Loopback).ToList();
+                            var pick = ups.FirstOrDefault(n => n.GetIPProperties().GatewayAddresses
+                                        .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork))
+                                       ?? ups.FirstOrDefault();
+                            return pick?.GetIPProperties().UnicastAddresses
+                                .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
+                                .Select(a => a.Address.ToString()).FirstOrDefault() ?? "";
+                        }
                     case "monitor": return MonitorSpoof.ReadCurrent();
                 }
             }

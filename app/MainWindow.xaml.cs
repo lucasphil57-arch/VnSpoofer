@@ -147,6 +147,7 @@ namespace VnSpoofer
 
                 if (SwIp.IsChecked == true) { var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
                 if (SwMon.IsChecked == true) { var _nmo = MonitorSpoof.Apply(_id, _st); if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo; }
+                if (SwMac.IsChecked == true) IpSpoof.RestartNic();
 
                 _st.Pending = true;
                 _st.Save();

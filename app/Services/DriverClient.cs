@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -106,7 +106,7 @@ namespace VnSpoofer.Services
                 DiskSerial = id.Disk,
                 VolumeSerial = uint.Parse(id.Volume),
                 Mac = id.Mac.Split(':').Select(x => Convert.ToByte(x, 16)).ToArray(),
-                Uuid = Guid.Parse(id.Uuid).ToByteArray(),
+                Uuid = ParseSeq(id.Uuid),
                 BoardSerial = id.Board,
                 BiosSerial = id.Bios,
                 SysProduct = id.Product,
@@ -135,7 +135,22 @@ namespace VnSpoofer.Services
             return Task.CompletedTask;
         }
 
-        public void RestorePendingGuid() { }
+                static byte[] ParseSeq(string s)
+        {
+            try
+            {
+                var x = (s ?? "").Replace("-", "").Trim();
+                if (x.Length >= 32)
+                {
+                    var b = new byte[16];
+                    for (int i = 0; i < 16; i++) b[i] = Convert.ToByte(x.Substring(i * 2, 2), 16);
+                    return b;
+                }
+            }
+            catch { }
+            return Guid.TryParse(s, out var g) ? g.ToByteArray() : new byte[16];
+        }
+public void RestorePendingGuid() { }
 
         public void LaunchApex(Action<string, string> log)
         {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.NetworkInformation;
@@ -56,6 +56,13 @@ namespace VnSpoofer.Services
             if (c.dns.Length > 0)
                 Sh("netsh", $"interface ipv4 set dnsservers name=\"{c.name}\" static {c.dns} primary");
 
+for (int i = 0; i < 40; i++)
+            {
+                var cur = Current();
+                if (cur.ip == neu) break;
+                System.Threading.Thread.Sleep(150);
+            }
+
             return neu;
         }
 
@@ -74,6 +81,17 @@ namespace VnSpoofer.Services
             }
         }
 
+        public static void RestartNic()
+        {
+            var c = Current();
+            if (c.name == null) return;
+            Sh("powershell", "-NoProfile -Command \"Restart-NetAdapter -Name '" + c.name + "' -Confirm:$false\"");
+            for (int i = 0; i < 60; i++)
+            {
+                if (Current().name != null) break;
+                System.Threading.Thread.Sleep(250);
+            }
+        }
         static void Sh(string exe, string args)
         {
             try

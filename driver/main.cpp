@@ -463,10 +463,10 @@ static void PatchSmbios(PSFTI fi, ULONG len)
     if (avail < 12) return;
 
     PUCHAR raw = fi->TableBuffer;
-    if (!raw) return
+    if (!raw) return;
     DbgInc(L"SmbCall");
     DbgSet(L"SmbAvail", avail);
-    DbgSet(L"SmbSig", *(PULONG)raw);;
+    DbgSet(L"SmbSig", *(PULONG)raw);
 
     ULONG tl = *(PULONG)(raw + 4);
     if (tl && tl + 8 < avail) avail = tl + 8;
@@ -480,7 +480,7 @@ static void PatchSmbios(PSFTI fi, ULONG len)
         if (nx >= end) break;
 
         if (t == 1 && sl >= 0x19) {
-            RtlCopyMemory(p + 8, g_Cfg.Uuid, 16);
+            RtlCopyMemory(p + 8, g_Cfg.Uuid, 16); DbgInc(L"UuidHit"); DbgSet(L"UuidB0", *(PULONG)g_Cfg.Uuid);
         } else if (t == 2 && sl >= 8) {
             SmbSet(p, end, 5, g_Cfg.SysProduct);
             SmbSet(p, end, 7, g_Cfg.BoardSerial);
@@ -637,57 +637,29 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
 
 static NTSTATUS GpuApply()
 {
-    WCHAR base[] = L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI";
-    HANDLE root = OpenAbs(base, KEY_ENUMERATE_SUB_KEYS, NULL);
+    HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_ENUMERATE_SUB_KEYS, NULL);
     if (!root) return STATUS_UNSUCCESSFUL;
 
     ULONG n = 0, i = 0, saved = 0;
-    WCHAR tmp[700], dst[720], cnt[8];
+    WCHAR path[420], src[460], dst[480], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
-        if (kb->NameLength < 8) continue;
-        if (kb->Name[0] != L'V' || kb->Name[1] != L'E' ||
-            kb->Name[2] != L'N' || kb->Name[3] != L'_') continue;
+        WCHAR di[400] = {0};
+        CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
+        if (!NT_SUCCESS(RegRead(path, L"DeviceInstance", di, 400)) || !di[0]) continue;
 
-        UNICODE_STRING kn;
-        kn.Buffer = kb->Name;
-        kn.Length = (USHORT)kb->NameLength;
-        kn.MaximumLength = (USHORT)kb->NameLength;
-        Append(tmp, 700, base); Append(tmp, 700, L"\\"); AppendN(tmp, 700, kn.Buffer, kn.Length / 2);
-        WCHAR cls[64] = {0};
-        if (!NT_SUCCESS(RegRead(tmp, L"ClassGUID", cls, 64))) continue;
-        {
-            UNICODE_STRING ua, ub;
-            RtlInitUnicodeString(&ua, cls);
-            RtlInitUnicodeString(&ub, GPU_CLASS);
-            if (!RtlEqualUnicodeString(&ua, &ub, TRUE)) continue;
+        CopyW(src, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\", 460);
+        Append(src, 460, di);
+        CopyW(dst, 480, src, 480); Append(dst, 480, L"-SPOOF");
+        if (NT_SUCCESS(GpuMove(src, dst))) {
+            NumW(cnt, 8, saved++);
+            RegSz(BK_KEY, cnt, src);
         }
-
-        HANDLE dh = OpenAbs(tmp, KEY_ENUMERATE_SUB_KEYS, NULL);
-        if (!dh) continue;
-
-        ULONG m = 0, k = 0;
-        while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
-            PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
-            WCHAR src[760];
-            UNICODE_STRING in2;
-            in2.Buffer = ib->Name;
-            in2.Length = (USHORT)ib->NameLength;
-            in2.MaximumLength = (USHORT)ib->NameLength;
-            CopyW(src, 760, tmp, 760); Append(src, 760, L"\\"); AppendN(src, 760, in2.Buffer, in2.Length / 2);
-            CopyW(dst, 720, src, 720); Append(dst, 720, L"-SPOOF");
-            if (NT_SUCCESS(GpuMove(src, dst))) {
-                NumW(cnt, 8, saved++);
-                RegSz(BK_KEY, cnt, src);
-            }
-        }
-        ZwClose(dh);
     }
     ZwClose(root);
     g_HookGpu = TRUE;
     return STATUS_SUCCESS;
 }
-
 static void GpuRevert()
 {
     WCHAR src[760], back[720], cnt[8];
@@ -703,6 +675,49 @@ static void GpuRevert()
     g_HookGpu = FALSE;
 }
 
+#define NET_CLASS L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}"
+#define GPU_CLASS_KEY L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
+
+static void MacHex(PWSTR out)
+{
+    const WCHAR* hx = L"0123456789ABCDEF";
+    for (int i = 0; i < 6; i++) { out[i * 2] = hx[g_Cfg.Mac[i] >> 4]; out[i * 2 + 1] = hx[g_Cfg.Mac[i] & 15]; }
+    out[12] = 0;
+}
+
+static void MacRegApply()
+{
+    WCHAR hex[16], path[420], cnt[8];
+    ULONG n = 0, i = 0, saved = 0;
+
+    MacHex(hex);
+    HANDLE root = OpenAbs(NET_CLASS, KEY_ENUMERATE_SUB_KEYS, NULL);
+    if (!root) return;
+
+    while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
+        PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
+        WCHAR id[64] = {0};
+        CopyW(path, 420, NET_CLASS, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
+        if (!NT_SUCCESS(RegRead(path, L"NetCfgInstanceId", id, 64)) || !id[0]) continue;
+        RegSz(path, L"NetworkAddress", hex);
+        NumW(cnt, 8, saved++);
+        RegSz(BK_KEY, cnt, path);
+    }
+    ZwClose(root);
+}
+
+static void MacRegRevert()
+{
+    WCHAR path[420], cnt[8];
+    for (ULONG i = 0; i < 64; i++) {
+        NumW(cnt, 8, i);
+        WCHAR v[420] = {0};
+        if (!NT_SUCCESS(RegRead(BK_KEY, cnt, v, 420)) || !v[0]) continue;
+        CopyW(path, 420, v, 420);
+        RtlDeleteRegistryValue(RTL_REGISTRY_ABSOLUTE, path, L"NetworkAddress");
+        RtlDeleteRegistryValue(RTL_REGISTRY_ABSOLUTE, BK_KEY, cnt);
+    }
+}
 static NTSTATUS DoApply(PSPOOF_CFG c)
 {
     if (g_Applied) return STATUS_ALREADY_REGISTERED;
@@ -729,6 +744,7 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
         RtlInitUnicodeString(&n, L"NtDeviceIoControlFile");
         g_NdiCf = MmGetSystemRoutineAddress(&n);
         if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) { g_HookMac = TRUE; g_NdiCf = g_DtNdi.Tramp; }
+        MacRegApply();
     }
     if (c->Flags & SPOOF_SMBIOS) {
         UNICODE_STRING n;
@@ -753,6 +769,7 @@ static NTSTATUS DoRevert()
     if (g_HookGpu) GpuRevert();
     if (g_HookSmb) { DetourRemove(&g_DtNqsi); g_HookSmb = FALSE; }
     if (g_HookMac) { DetourRemove(&g_DtNdi); g_HookMac = FALSE; }
+    if (g_Cfg.Flags & SPOOF_MAC) MacRegRevert();
     if (g_HookVol) { HookDrv(g_DrvVol, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)g_OrigVol, (PVOID*)&g_OrigVol); g_HookVol = FALSE; }
     if (g_HookDisk) { HookDrv(g_DrvDisk, IRP_MJ_DEVICE_CONTROL, (PVOID)g_OrigDisk, (PVOID*)&g_OrigDisk); g_HookDisk = FALSE; }
     if (g_Cfg.Flags & SPOOF_GUID) GuidRevert();
