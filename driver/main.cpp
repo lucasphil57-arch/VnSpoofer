@@ -774,6 +774,31 @@ static HANDLE CreateAbs(PCWSTR path, HANDLE parent)
     return h;
 }
 
+static void DelSubtree(HANDLE parent)
+{
+    UCHAR buf[512];
+
+    for (int guard = 0; guard < 64; guard++) {
+        PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)buf;
+        UNICODE_STRING name;
+        OBJECT_ATTRIBUTES oa;
+        HANDLE ch;
+        ULONG sz = 0;
+
+        if (!NT_SUCCESS(ZwEnumerateKey(parent, 0, KeyBasicInformation, buf, sizeof(buf), &sz))) return;
+
+        name.Buffer = kb->Name;
+        name.Length = (USHORT)kb->NameLength;
+        name.MaximumLength = (USHORT)kb->NameLength;
+        InitializeObjectAttributes(&oa, &name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, parent, NULL);
+
+        if (!NT_SUCCESS(ZwOpenKey(&ch, KEY_ALL_ACCESS, &oa))) return;
+        DelSubtree(ch);
+        ZwDeleteKey(ch);
+        ZwClose(ch);
+    }
+}
+
 static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
 {
     HANDLE sh = OpenAbs(from, KEY_ALL_ACCESS, NULL);
@@ -794,6 +819,7 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
         ZwClose(ph);
     }
     ZwClose(th);
+    DelSubtree(sh);
     {
         NTSTATUS ds = ZwDeleteKey(sh);
         if (!NT_SUCCESS(ds)) {
