@@ -358,9 +358,10 @@ static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
     UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
     if (NT_SUCCESS(irp->IoStatus.Status)) {
         PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-        if (sp->Parameters.DeviceIoControl.OutputBufferLength >= 12) {
-            PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)irp->AssociatedIrp.SystemBuffer;
-            if (v) v->VolumeSerialNumber = g_Cfg.VolumeSerial;
+        PVOID vb = irp->UserBuffer ? irp->UserBuffer : irp->AssociatedIrp.SystemBuffer;
+        if (vb && sp->Parameters.QueryVolume.Length >= 12) {
+            PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)vb;
+            v->VolumeSerialNumber = g_Cfg.VolumeSerial;
         }
     }
     return STATUS_SUCCESS;
@@ -643,26 +644,34 @@ static NTSTATUS GpuApply()
     if (!root) return STATUS_UNSUCCESSFUL;
 
     ULONG n = 0, i = 0, saved = 0;
-    WCHAR path[420], src[460], dst[480], cnt[8];
+    WCHAR path[420], dev[460], src[520], dst[540], cnt[8];
     while (NT_SUCCESS(ZwEnumerateKey(root, i++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &n))) {
         PKEY_BASIC_INFORMATION kb = (PKEY_BASIC_INFORMATION)g_EnumBuf;
-        WCHAR di[400] = {0};
+        WCHAR md[300] = {0};
         CopyW(path, 420, GPU_CLASS_KEY, 420); Append(path, 420, L"\\"); AppendN(path, 420, kb->Name, kb->NameLength / 2);
-        if (!NT_SUCCESS(RegRead(path, L"DeviceInstance", di, 400)) || !di[0]) continue;
+        if (!NT_SUCCESS(RegRead(path, L"MatchingDeviceId", md, 300)) || !md[0]) continue;
 
-        CopyW(src, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\", 460);
-        Append(src, 460, di);
-        CopyW(dst, 480, src, 480); Append(dst, 480, L"-SPOOF");
-        if (NT_SUCCESS(GpuMove(src, dst))) {
-            NumW(cnt, 8, saved++);
-            RegSz(BK_KEY, cnt, src);
+        CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\", 460);
+        Append(dev, 460, md);
+        HANDLE dh = OpenAbs(dev, KEY_ENUMERATE_SUB_KEYS, NULL);
+        if (!dh) continue;
+
+        ULONG m = 0, k = 0;
+        while (NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
+            PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+            CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); AppendN(src, 520, ib->Name, ib->NameLength / 2);
+            CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
+            if (NT_SUCCESS(GpuMove(src, dst))) {
+                NumW(cnt, 8, saved++);
+                RegSz(BK_KEY, cnt, src);
+            }
         }
+        ZwClose(dh);
     }
     ZwClose(root);
     g_HookGpu = TRUE;
     return STATUS_SUCCESS;
-}
-static void GpuRevert()
+}static void GpuRevert()
 {
     WCHAR src[760], back[720], cnt[8];
     for (ULONG i = 0; i < 32; i++) {

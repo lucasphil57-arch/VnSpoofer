@@ -95,7 +95,7 @@ namespace VnSpoofer.Services
                 var o = new byte[1024];
                 uint r;
                 if (!DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, q, 12, o, 1024, out r, IntPtr.Zero)) return "";
-                int off = BitConverter.ToInt32(o, 0x20);
+                int off = BitConverter.ToInt32(o, 0x18);
                 if (off <= 0 || off >= o.Length) return "";
                 int e = off;
                 while (e < o.Length && o[e] != 0) e++;
@@ -163,9 +163,12 @@ namespace VnSpoofer.Services
                 foreach (var sub in k.GetSubKeyNames())
                 {
                     using var sk = k.OpenSubKey(sub);
-                    if (!(sk?.GetValue("DeviceInstance") is string di) || string.IsNullOrEmpty(di)) continue;
-                    var parts = di.Split('\\');
-                    if (parts.Length >= 2) return parts[parts.Length - 1];
+                    if (!(sk?.GetValue("MatchingDeviceId") is string md) || string.IsNullOrEmpty(md)) continue;
+                    var pci = md.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase) ? md.Substring(4) : md;
+                    using var ek = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI\" + pci);
+                    if (ek == null) continue;
+                    var inst = ek.GetSubKeyNames().FirstOrDefault();
+                    if (!string.IsNullOrEmpty(inst)) return inst;
                 }
             }
             catch { }
