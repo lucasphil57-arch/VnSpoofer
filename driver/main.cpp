@@ -305,6 +305,7 @@ static PFN_DISPATCH g_OrigVol;
 static PDRIVER_OBJECT g_DrvDisk;
 static PDRIVER_OBJECT g_DrvVol;
 static BOOLEAN g_HookDisk, g_HookVol, g_HookMac, g_HookSmb, g_HookGpu;
+static volatile LONG g_DiskHits, g_VolHits;
 
 static PDRIVER_OBJECT DrvOfVolume(PCWSTR name)
 {
@@ -330,50 +331,52 @@ static void DbgInc(PCWSTR name);
 
 static NTSTATUS DiskDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
-    UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
-    DbgInc(L"DiskDone");
+    UNREFERENCED_PARAMETER(dev);
+    InterlockedIncrement(&g_DiskHits);
+    if ((ULONG)(ULONG_PTR)c != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
     if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
-    PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-    if (sp->Parameters.DeviceIoControl.IoControlCode != IOCTL_STORAGE_QUERY_PROPERTY) return STATUS_SUCCESS;
-
-    PSTORAGE_PROPERTY_QUERY q = (PSTORAGE_PROPERTY_QUERY)irp->AssociatedIrp.SystemBuffer;
-    if (!q || q->PropertyId != StorageDeviceProperty || q->QueryType != PropertyStandardQuery) return STATUS_SUCCESS;
 
     PSTORAGE_DEVICE_DESCRIPTOR dd = (PSTORAGE_DEVICE_DESCRIPTOR)irp->AssociatedIrp.SystemBuffer;
-    ULONG out = sp->Parameters.DeviceIoControl.OutputBufferLength;
-    if (dd->SerialNumberOffset && dd->SerialNumberOffset < out)
-        CopyA((PCHAR)dd + dd->SerialNumberOffset, out - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
+    if (!dd) return STATUS_SUCCESS;
+
+    ULONG sz = dd->Size ? dd->Size : (ULONG)irp->IoStatus.Information;
+    if (dd->SerialNumberOffset && dd->SerialNumberOffset < sz)
+        CopyA((PCHAR)dd + dd->SerialNumberOffset, sz - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS HookDisk(PDEVICE_OBJECT dev, PIRP irp)
 {
-    if (IoGetCurrentIrpStackLocation(irp)->MajorFunction == IRP_MJ_DEVICE_CONTROL) {
+    PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
+    ULONG code = sp->Parameters.DeviceIoControl.IoControlCode;
+    if (sp->MajorFunction == IRP_MJ_DEVICE_CONTROL && code == IOCTL_STORAGE_QUERY_PROPERTY) {
         if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
-        IoSetCompletionRoutine(irp, DiskDone, NULL, TRUE, TRUE, TRUE);
+        IoSetCompletionRoutine(irp, DiskDone, (PVOID)(ULONG_PTR)code, TRUE, TRUE, TRUE);
     }
     return g_OrigDisk(dev, irp);
 }
 
 static NTSTATUS VolDone(PDEVICE_OBJECT dev, PIRP irp, PVOID c)
 {
-    UNREFERENCED_PARAMETER(dev); UNREFERENCED_PARAMETER(c);
-    DbgInc(L"VolDone");
-    if (NT_SUCCESS(irp->IoStatus.Status)) {
-        PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
-        PVOID vb = irp->UserBuffer ? irp->UserBuffer : irp->AssociatedIrp.SystemBuffer;
-        if (vb && sp->Parameters.QueryVolume.Length >= 12) {
-            PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)vb;
-            v->VolumeSerialNumber = g_Cfg.VolumeSerial;
-        }
-    }
+    UNREFERENCED_PARAMETER(dev);
+    InterlockedIncrement(&g_VolHits);
+    if ((ULONG)(ULONG_PTR)c != FileFsVolumeInformation) return STATUS_SUCCESS;
+    if (!NT_SUCCESS(irp->IoStatus.Status)) return STATUS_SUCCESS;
+    if (irp->IoStatus.Information < sizeof(FILE_FS_VOLUME_INFORMATION)) return STATUS_SUCCESS;
+
+    PFILE_FS_VOLUME_INFORMATION v = (PFILE_FS_VOLUME_INFORMATION)
+        (irp->UserBuffer ? irp->UserBuffer : irp->AssociatedIrp.SystemBuffer);
+    if (v) v->VolumeSerialNumber = g_Cfg.VolumeSerial;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS HookVol(PDEVICE_OBJECT dev, PIRP irp)
 {
-    if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
-    IoSetCompletionRoutine(irp, VolDone, NULL, TRUE, TRUE, TRUE);
+    PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(irp);
+    if (sp->Parameters.QueryVolume.FsInformationClass == FileFsVolumeInformation) {
+        if (irp->CurrentLocation > 1) IoCopyCurrentIrpStackLocationToNext(irp);
+        IoSetCompletionRoutine(irp, VolDone, (PVOID)(ULONG_PTR)FileFsVolumeInformation, TRUE, TRUE, TRUE);
+    }
     return g_OrigVol(dev, irp);
 }
 
@@ -652,7 +655,8 @@ static NTSTATUS GpuApply()
 {
     HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_READ, NULL);
     if (!root) return STATUS_UNSUCCESSFUL;
-    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_READ, NULL);
+    HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_ENUMERATE_SUB_KEYS, NULL);
+    DbgDw(L"GpuPci", pci ? 1u : 0u);
     if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
 
     ULONG n = 0, i = 0, saved = 0;
@@ -836,6 +840,7 @@ static NTSTATUS Dispatch(PDEVICE_OBJECT dev, PIRP irp)
             st = DoRevert();
         } else if (code == IOCTL_STATE && sp->Parameters.DeviceIoControl.OutputBufferLength >= 1) {
             *(PUCHAR)irp->AssociatedIrp.SystemBuffer = g_Applied ? 1 : 0;
+            DbgDw(L"DiskHits", (ULONG)g_DiskHits); DbgDw(L"VolHits", (ULONG)g_VolHits);
             out = 1;
             st = STATUS_SUCCESS;
         }

@@ -78,11 +78,7 @@ namespace VnSpoofer.Services
             if (p < 0) return "";
             var u = new byte[16];
             Buffer.BlockCopy(b, p + 8, u, 0, 16);
-            return $"{BitConverter.ToString(u, 0, 4).Replace("-", "").ToLowerInvariant()}-" +
-                   $"{BitConverter.ToString(u, 4, 2).Replace("-", "").ToLowerInvariant()}-" +
-                   $"{BitConverter.ToString(u, 6, 2).Replace("-", "").ToLowerInvariant()}-" +
-                   $"{BitConverter.ToString(u, 8, 2).Replace("-", "").ToLowerInvariant()}-" +
-                   $"{BitConverter.ToString(u, 10, 6).Replace("-", "").ToLowerInvariant()}";
+            return new Guid(u).ToString().ToLowerInvariant();
         }
 
         static string DiskSerial()

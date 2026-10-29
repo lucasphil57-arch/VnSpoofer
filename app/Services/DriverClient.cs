@@ -13,6 +13,7 @@ namespace VnSpoofer.Services
     {
         const uint IOCTL_APPLY = 0x00222000;
         const uint IOCTL_REVERT = 0x00222004;
+        const uint IOCTL_STATE = 0x00222008;
 
         [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Ansi)]
         struct Cfg
@@ -27,6 +28,8 @@ namespace VnSpoofer.Services
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 24)] public string SysProduct;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 40)] public string MachineGuid;
         }
+
+        public void Stat() { if (Mapped) Native.DeviceIoControl(_h, IOCTL_STATE, null, 0, new byte[1], 1, out _, IntPtr.Zero); }
 
         IntPtr _h = new IntPtr(-1);
         public bool Mapped => _h != new IntPtr(-1);
@@ -106,7 +109,7 @@ namespace VnSpoofer.Services
                 DiskSerial = id.Disk,
                 VolumeSerial = uint.Parse(id.Volume),
                 Mac = id.Mac.Split(':').Select(x => Convert.ToByte(x, 16)).ToArray(),
-                Uuid = ParseSeq(id.Uuid),
+                Uuid = Guid.Parse(id.Uuid).ToByteArray(),
                 BoardSerial = id.Board,
                 BiosSerial = id.Bios,
                 SysProduct = id.Product,

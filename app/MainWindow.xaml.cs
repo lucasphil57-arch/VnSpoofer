@@ -219,6 +219,7 @@ namespace VnSpoofer
                     Color = good ? "#33D17A" : "#FF5C5C"
                 });
             }
+            _drv.Stat();
             VerifyList.ItemsSource = rows;
             TxtVerifySum.Text = $"{ok} / {Keys.All.Length} composants conformes";
         }
