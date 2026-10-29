@@ -134,10 +134,9 @@ namespace VnSpoofer
                 if (!await EnsureMapped()) { Log("Mapping echoue.", "#FF5C5C"); return; }
 
                 BusyStep_("Retour a l'etat d'origine", "Restauration avant nouvelle identite");
-                await _drv.RevertAsync();
-                IpSpoof.Revert(_st);
-                MonitorSpoof.Revert(_st);
-                MacReg.Restore(_st);
+                await System.Threading.Tasks.Task.Run(() => _drv.RevertAsync());
+                await System.Threading.Tasks.Task.Run(() => { IpSpoof.Revert(_st); MonitorSpoof.Revert(_st); MacReg.Restore(_st); });
+                await System.Threading.Tasks.Task.Delay(140);
 
                 _st = new State();
                 CaptureOriginals();
@@ -149,8 +148,10 @@ namespace VnSpoofer
                 _st.Id = _id;
 
                 BusyStep_("Application de l'identite", "SMBIOS, disque, volume, MAC, GUID, GPU");
-                if (SwMac.IsChecked == true) MacReg.Backup(_st);
-                if (flags != 0 && !_drv.Apply(_id, flags)) { Log("IOCTL_APPLY echoue.", "#FF5C5C"); return; }
+                if (SwMac.IsChecked == true) await System.Threading.Tasks.Task.Run(() => MacReg.Backup(_st));
+                bool okApply = flags == 0 || await System.Threading.Tasks.Task.Run(() => _drv.Apply(_id, flags));
+                if (!okApply) { Log("IOCTL_APPLY echoue.", "#FF5C5C"); return; }
+                await System.Threading.Tasks.Task.Delay(140);
 
                 _st.Expected["uuid"] = _id.Uuid;
                 _st.Expected["board"] = _id.Board;
@@ -162,10 +163,25 @@ namespace VnSpoofer
                 _st.Expected["guid"] = _id.Guid;
                 if (SwGpu.IsChecked == true && _st.Original.TryGetValue("gpu", out var _go) && !string.IsNullOrEmpty(_go)) _st.Expected["gpu"] = _go + "-SPOOF";
 
-                if (SwIp.IsChecked == true) IpSpoof.Prepare(_st);
-                if (SwMon.IsChecked == true) { var _nmo = MonitorSpoof.Apply(_id, _st); if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo; }
-                if (SwMac.IsChecked == true) { BusyStep_("Redemarrage de la carte reseau", "Prise en compte de la nouvelle MAC"); IpSpoof.RestartNic(); }
-                if (SwIp.IsChecked == true) { BusyStep_("Renouvellement du bail", "DHCP"); var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
+                if (SwIp.IsChecked == true) await System.Threading.Tasks.Task.Run(() => IpSpoof.Prepare(_st));
+                if (SwMon.IsChecked == true)
+                {
+                    BusyStep_("Configuration de l'ecran", "EDID");
+                    var _nmo = await System.Threading.Tasks.Task.Run(() => MonitorSpoof.Apply(_id, _st));
+                    if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo;
+                    await System.Threading.Tasks.Task.Delay(140);
+                }
+                if (SwMac.IsChecked == true)
+                {
+                    BusyStep_("Redemarrage de la carte reseau", "Prise en compte de la nouvelle MAC");
+                    await System.Threading.Tasks.Task.Run(() => IpSpoof.RestartNic());
+                }
+                if (SwIp.IsChecked == true)
+                {
+                    BusyStep_("Renouvellement du bail", "DHCP");
+                    var _nip = await System.Threading.Tasks.Task.Run(() => IpSpoof.Apply(_st));
+                    if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip;
+                }
 
                 BusyStep_("Verification", "Controle des composants");
                 _st.Pending = true;
@@ -187,7 +203,8 @@ namespace VnSpoofer
         {
             SetPill("VERIF", "#F5A623", "#0A0C0F");
             Log("Identite precedente detectee, re-application pour verification...", "#F5A623");
-            if (!await EnsureMapped()) return;
+            BusyShow("Reprise de l'identite", "Verification apres redemarrage");
+            if (!await EnsureMapped()) { BusyHide(); return; }
 
             if (_st.Expected == null) _st.Expected = new Dictionary<string, string>(); if (_st.Original == null) _st.Original = new Dictionary<string, string>(); if (_id == null || string.IsNullOrEmpty(_id.Uuid))
             {
@@ -212,9 +229,12 @@ namespace VnSpoofer
             _st.Expected["guid"] = _id.Guid;
             if (_st.Original.TryGetValue("gpu", out var _g2) && !string.IsNullOrEmpty(_g2)) _st.Expected["gpu"] = _g2 + "-SPOOF";
             uint flags = (uint)_st.Flags;
-            await _drv.RevertAsync(); if (flags != 0 && _drv.Apply(_id, flags)) Log("Re-applique.", "#33D17A"); else Log("Re-application echouee.", "#E5484D");
+            await System.Threading.Tasks.Task.Run(() => _drv.RevertAsync());
+            bool okRe = flags == 0 || await System.Threading.Tasks.Task.Run(() => _drv.Apply(_id, flags));
+            Log(okRe ? "Re-applique." : "Re-application echouee.", okRe ? "#33D17A" : "#E5484D");
             BtnRevert.IsEnabled = true;
             Refresh();
+            BusyHide();
         }
 
         void Refresh()
@@ -247,10 +267,13 @@ namespace VnSpoofer
 
         async void Revert_Click(object s, RoutedEventArgs e)
         {
-            await _drv.RevertAsync();
-            IpSpoof.Revert(_st);
-            MonitorSpoof.Revert(_st);
-            MacReg.Restore(_st);
+            BusyShow("Restauration", "Retour a l'identite d'origine");
+            try
+            {
+                await System.Threading.Tasks.Task.Run(() => _drv.RevertAsync());
+                await System.Threading.Tasks.Task.Run(() => { IpSpoof.Revert(_st); MonitorSpoof.Revert(_st); MacReg.Restore(_st); });
+            }
+            finally { BusyHide(); }
             State.Wipe();
             SetPill("INACTIF", "#1E242C", "#7C8797");
             TxtDashTitle.Text = "Aucun spoof actif";

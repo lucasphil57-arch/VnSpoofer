@@ -23,6 +23,12 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+          <Setter Property="Background" Value="#1A2130"/>
+        </Trigger>
+      </Style.Triggers>
     </Style>
     <Style x:Key="ThinBar" TargetType="ProgressBar">
       <Setter Property="Height" Value="4"/>
@@ -51,6 +57,9 @@
               <Ellipse x:Name="PillDot" Width="6" Height="6" Fill="#5E6A7C" VerticalAlignment="Center" Margin="0,0,6,0"/>
               <TextBlock x:Name="PillText" Text="INACTIF" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource Muted}"/>
             </StackPanel>
+          </Border>
+          <Border Background="#1B2233" BorderBrush="#2A3446" BorderThickness="1" CornerRadius="6" Padding="7,3" Margin="8,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="TEMP" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource Accent2}"/>
           </Border>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -214,6 +223,19 @@
         <ScrollViewer x:Name="SecTuto" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
           <StackPanel>
             <TextBlock Text="TUTORIELS PAR ANTI-TRICHE" Style="{StaticResource Mono}" Margin="2,0,0,10"/>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10" BorderBrush="{StaticResource Accent}" BorderThickness="1">
+              <StackPanel>
+                <TextBlock Text="COMMENCER ICI - C'EST QUOI UN TEMP SPOOFER" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Un temp spoofer change l'empreinte materielle de ta machine pour la duree d'une session, sans rien installer ni ecrire dans le BIOS. Le pilote est mappe en memoire, les identifiants sont remplaces a la volee. Au redemarrage, tout disparait et la machine reprend son empreinte d'origine. Rien n'est permanent, rien n'est irreversible."/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="A quoi ca sert : repartir avec une empreinte neuve sur un jeu, sans acheter de materiel ni reinstaller Windows. A quoi ca ne sert pas : debannir un compte deja marque, contourner le TPM ou le CPUID."/>
+                <TextBlock Text="DEROULEMENT, DANS L'ORDRE" Style="{StaticResource Mono}" Margin="0,14,0,6"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Text="1. Redemarre le PC. Obligatoire : un pilote deja mappe squatte le nom du device et le nouveau mapping echoue. 2. Ouvre l'app en administrateur. 3. Ferme les outils noyau : RGB, monitoring, overclock, autre spoofer. 4. Choisis le profil du jeu vise. 5. Clique APPLIQUER et laisse aller jusqu'au bout. 6. Va dans Verification : les 11 lignes doivent etre vertes. Une seule ligne rouge et l'empreinte n'est pas neuve, donc tu redemarres et tu recommences. 7. Lance le jeu. 8. Ne redemarre pas pendant la session."/>
+                <TextBlock Text="ERREURS CLASSIQUES" Style="{StaticResource Mono}" Margin="0,14,0,6"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Text="Appliquer sans redemarrer avant : le mapping echoue ou l'ancienne identite reste. Lancer le jeu avec une ligne rouge : l'anti-triche voit un composite moitie ancien moitie neuf, ce qui est pire que pas de spoof du tout. Oublier de restaurer avant de rendre la machine : la MAC spoofee reste dans le registre et la prochaine capture d'origine est faussee. Redemarrer en pleine session : retour immediat a l'empreinte d'origine."/>
+                <TextBlock Text="APRES LA SESSION" Style="{StaticResource Mono}" Margin="0,14,0,6"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Text="Clique Restaurer avant d'eteindre, puis redemarre. La restauration remet la MAC d'origine et efface les hooks. Si tu doutes de l'etat, la commande de controle est dans le journal : la MAC doit revenir a sa valeur d'origine."/>
+              </StackPanel>
+            </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
                 <TextBlock Text="CE QUI EST REELLEMENT COUVERT" FontSize="14" FontWeight="SemiBold"/>

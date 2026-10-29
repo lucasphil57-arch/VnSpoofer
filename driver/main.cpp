@@ -59,10 +59,10 @@ typedef struct _DETOUR {
     BOOLEAN Active;
 } DETOUR;
 
-static DETOUR g_DtNdi, g_DtNqsi;
+static DETOUR g_DtNdi, g_DtNqsi, g_DtNqvi, g_DtNqi;
 
 #pragma section(".text$z", read, execute)
-__declspec(allocate(".text$z")) static UCHAR g_TrampPool[4][256];
+__declspec(allocate(".text$z")) static UCHAR g_TrampPool[8][256];
 static ULONG g_TrampNext = 0;
 
 static KIRQL g_Irql;
@@ -168,7 +168,7 @@ static NTSTATUS DetourInstall(DETOUR* d, PVOID t, PVOID h)
     ULONGLONG abs;
 
     if (!d || !t || !h || !IsKernelPtr(t) || !IsKernelPtr(h)) return STATUS_INVALID_PARAMETER;
-    if (g_TrampNext >= 4) return STATUS_INSUFFICIENT_RESOURCES; g_Step = 1;
+    if (g_TrampNext >= 8) return STATUS_INSUFFICIENT_RESOURCES; g_Step = 1;
 
     for (int hop = 0; hop < 4; hop++) {
         PUCHAR p = (PUCHAR)t;
@@ -392,11 +392,11 @@ static void HookFsd(PCWSTR name, ULONG major, PVOID nf, PCWSTR tag)
     if (!NT_SUCCESS(IoGetDeviceObjectPointer(&u, FILE_READ_ATTRIBUTES, &fo, &dev))) return;
 
     __try {
-        if (dev->Vpb && dev->Vpb->DeviceObject) {
-            PDRIVER_OBJECT d = dev->Vpb->DeviceObject->DriverObject;
-            if (NT_SUCCESS(HookOnce(d, major, nf)) && d->DriverName.Buffer)
-                AppendN(path, 256, d->DriverName.Buffer, d->DriverName.Length / 2);
-        }
+        PDRIVER_OBJECT d = NULL;
+        if (dev->Vpb && dev->Vpb->DeviceObject) d = dev->Vpb->DeviceObject->DriverObject;
+        else d = dev->DriverObject;
+        if (d && NT_SUCCESS(HookOnce(d, major, nf)) && d->DriverName.Buffer)
+            AppendN(path, 256, d->DriverName.Buffer, d->DriverName.Length / 2);
     } __except (EXCEPTION_EXECUTE_HANDLER) { }
 
     DbgStr(tag, path);
@@ -477,11 +477,61 @@ static NTSTATUS HookNdi(HANDLE h, HANDLE ev, PIO_APC_ROUTINE a, PVOID ac,
                         PVOID out, ULONG ol)
 {
     NTSTATUS st = ((PFN_NDICF)g_NdiCf)(h, ev, a, ac, io, code, in, il, out, ol);
-    if (NT_SUCCESS(st) && code == IOCTL_NDIS_QUERY_GLOBAL_STATS && in && il >= 4 && out && ol >= 6) {
-        ULONG oid = *(PULONG)in;
-        if (oid == OID_802_3_CURRENT_ADDRESS || oid == OID_802_3_PERMANENT_ADDRESS)
-            RtlCopyMemory(out, g_Cfg.Mac, 6);
-    }
+    if (!NT_SUCCESS(st) || !out) return st;
+
+    __try {
+        if (code == IOCTL_NDIS_QUERY_GLOBAL_STATS && in && il >= 4 && ol >= 6) {
+            ULONG oid = *(PULONG)in;
+            if (oid == OID_802_3_CURRENT_ADDRESS || oid == OID_802_3_PERMANENT_ADDRESS)
+                RtlCopyMemory(out, g_Cfg.Mac, 6);
+        } else if (code == IOCTL_STORAGE_QUERY_PROPERTY && in && il >= 12 && ol >= 20) {
+            if (*(PULONG)in == 0) {
+                PSTORAGE_DEVICE_DESCRIPTOR dd = (PSTORAGE_DEVICE_DESCRIPTOR)out;
+                ULONG sz = dd->Size ? dd->Size : ol;
+                if (sz > ol) sz = ol;
+                if (dd->SerialNumberOffset && dd->SerialNumberOffset < sz) {
+                    InterlockedIncrement(&g_DiskQ);
+                    CopyA((PCHAR)dd + dd->SerialNumberOffset, sz - dd->SerialNumberOffset, g_Cfg.DiskSerial, 20);
+                }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+
+    return st;
+}
+
+typedef NTSTATUS (*PFN_NQVI)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FS_INFORMATION_CLASS);
+static PFN_NQVI g_Nqvi;
+typedef NTSTATUS (*PFN_NQI)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
+static PFN_NQI g_Nqi;
+
+static NTSTATUS HookNqi(HANDLE h, PIO_STATUS_BLOCK io, PVOID buf, ULONG len, FILE_INFORMATION_CLASS cls)
+{
+    NTSTATUS st = ((PFN_NQI)g_Nqi)(h, io, buf, len, cls);
+    if (!NT_SUCCESS(st) || cls != FileFsVolumeInformation || !buf) return st;
+
+    __try {
+        if (len >= sizeof(FILE_FS_VOLUME_INFORMATION)) {
+            InterlockedIncrement(&g_VolQ);
+            ((PFILE_FS_VOLUME_INFORMATION)buf)->VolumeSerialNumber = g_Cfg.VolumeSerial;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+
+    return st;
+}
+
+static NTSTATUS HookNqvi(HANDLE h, PIO_STATUS_BLOCK io, PVOID buf, ULONG len, FS_INFORMATION_CLASS cls)
+{
+    NTSTATUS st = ((PFN_NQVI)g_Nqvi)(h, io, buf, len, cls);
+    if (!NT_SUCCESS(st) || cls != FileFsVolumeInformation || !buf) return st;
+
+    __try {
+        if (len >= sizeof(FILE_FS_VOLUME_INFORMATION)) {
+            InterlockedIncrement(&g_VolQ);
+            ((PFILE_FS_VOLUME_INFORMATION)buf)->VolumeSerialNumber = g_Cfg.VolumeSerial;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+
     return st;
 }
 
@@ -743,7 +793,16 @@ static NTSTATUS GpuMove(PCWSTR from, PCWSTR to)
         ZwClose(ph);
     }
     ZwClose(th);
-    ZwDeleteKey(sh);
+    {
+        NTSTATUS ds = ZwDeleteKey(sh);
+        if (!NT_SUCCESS(ds)) {
+            LARGE_INTEGER iv;
+            iv.QuadPart = -10000 * 20;
+            KeDelayExecutionThread(KernelMode, FALSE, &iv);
+            ds = ZwDeleteKey(sh);
+        }
+        if (!NT_SUCCESS(ds)) DbgDw(L"GpuDelSt", (ULONG)ds);
+    }
     ZwClose(sh);
     return STATUS_SUCCESS;
 }
@@ -754,6 +813,47 @@ static BOOLEAN PrefEq(PCWSTR a, ULONG alen, PCWSTR b, ULONG blen)
     for (ULONG i = 0; i < alen; i++)
         if (RtlUpcaseUnicodeChar(a[i]) != RtlUpcaseUnicodeChar(b[i])) return FALSE;
     return TRUE;
+}
+
+static BOOLEAN EqI(PCWSTR a, PCWSTR b)
+{
+    while (*a && *b) {
+        if (RtlUpcaseUnicodeChar(*a) != RtlUpcaseUnicodeChar(*b)) return FALSE;
+        a++; b++;
+    }
+    return *a == *b;
+}
+
+static BOOLEAN GpuByDriver(HANDLE pci, PCWSTR want, PWSTR devOut, ULONG cch)
+{
+    ULONG e = 0, m = 0, k;
+    BOOLEAN found = FALSE;
+
+    while (!found && NT_SUCCESS(ZwEnumerateKey(pci, e++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
+        PKEY_BASIC_INFORMATION eb = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+        WCHAR dev[460];
+
+        CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
+        AppendN(dev, 460, eb->Name, eb->NameLength / 2);
+
+        HANDLE dh = OpenAbs(dev, KEY_READ, NULL);
+        if (!dh) continue;
+
+        k = 0;
+        while (!found && NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &m))) {
+            PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf;
+            WCHAR src[520], drv[160] = {0};
+
+            CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); AppendN(src, 520, ib->Name, ib->NameLength / 2);
+            if (!NT_SUCCESS(RegRead(src, L"Driver", drv, 160)) || !drv[0]) continue;
+            if (!EqI(drv, want)) continue;
+
+            CopyW(devOut, cch, src, cch);
+            found = TRUE;
+        }
+        ZwClose(dh);
+    }
+    return found;
 }
 
 static NTSTATUS GpuApply()
@@ -788,6 +888,7 @@ static NTSTATUS GpuApply()
         if (ml > 4 && (md[0] == L'p' || md[0] == L'P') && md[3] == L'\\') { mdp = md + 4; ml -= 4; }
 
         ULONG e = 0, m2 = 0, kmp = 0;
+        BOOLEAN done = FALSE;
         while (NT_SUCCESS(ZwEnumerateKey(pci, e++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m2))) {
             PKEY_BASIC_INFORMATION eb = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
             pc++;
@@ -800,7 +901,16 @@ static NTSTATUS GpuApply()
                 DbgStr(kn, kt);
                 kmp++;
             }
-            if (!PrefEq(mdp, ml, eb->Name, eb->NameLength / 2)) continue;
+            BOOLEAN hit = PrefEq(mdp, ml, eb->Name, eb->NameLength / 2);
+            if (!hit && ml) {
+                ULONG nl = eb->NameLength / 2;
+                for (ULONG s = 0; s + ml <= nl && !hit; s++) {
+                    hit = TRUE;
+                    for (ULONG i = 0; i < ml; i++)
+                        if (RtlUpcaseUnicodeChar(mdp[i]) != RtlUpcaseUnicodeChar(eb->Name[s + i])) { hit = FALSE; break; }
+                }
+            }
+            if (!hit) continue;
 
             CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
             AppendN(dev, 460, eb->Name, eb->NameLength / 2);
@@ -820,7 +930,22 @@ static NTSTATUS GpuApply()
                 }
             }
             ZwClose(dh);
+            done = TRUE;
             break;
+        }
+
+        if (!done) {
+            WCHAR want[96] = {0};
+            CopyW(want, 96, L"{4d36e968-e325-11ce-bfc1-08002be10318}\\", 96);
+            AppendN(want, 96, kb->Name, kb->NameLength / 2);
+            if (GpuByDriver(pci, want, src, 520)) {
+                DbgInc(L"GpuByDrv");
+                CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
+                if (NT_SUCCESS(GpuMove(src, dst))) {
+                    NumW(cnt, 8, saved++);
+                    RegSz(BK_KEY, cnt, src);
+                }
+            }
         }
     }
     DbgDw(L"GpuPciN", pc);
@@ -903,6 +1028,8 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
         ULONG h = 0;
         WCHAR vn[40], nb[8];
         h += StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskPath");
+        h += StackHook(L"\\DosDevices\\PhysicalDrive0", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"DiskP0");
+        HookFsd(L"\\DosDevices\\C:", IRP_MJ_DEVICE_CONTROL, (PVOID)HookDisk, L"FsdCDisk");
         for (int vi = 1; vi <= 8; vi++) {
             CopyW(vn, 40, L"\\Device\\HarddiskVolume", 40);
             NumW(nb, 8, (ULONG)vi);
@@ -925,16 +1052,30 @@ static NTSTATUS DoApply(PSPOOF_CFG c)
             HookFsd(vn, IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"FsdPath");
             if (g_HkN) h = g_HkN;
         }
+        StackHook(L"\\Device\\Harddisk0\\DR0", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"VolPath");
+        HookFsd(L"\\DosDevices\\C:", IRP_MJ_QUERY_VOLUME_INFORMATION, (PVOID)HookVol, L"FsdC");
+        if (g_HkN) h = g_HkN;
         DbgDw(L"VolDrv", h);
         DbgDw(L"VolSt", 0);
         if (h) g_HookVol = TRUE;
     }
-    if (c->Flags & SPOOF_MAC) {
+    if (c->Flags & (SPOOF_MAC | SPOOF_DISK | SPOOF_VOLUME)) {
         UNICODE_STRING n;
         RtlInitUnicodeString(&n, L"NtDeviceIoControlFile");
         g_NdiCf = MmGetSystemRoutineAddress(&n);
         if (g_NdiCf && NT_SUCCESS(DetourInstall(&g_DtNdi, g_NdiCf, (PVOID)HookNdi))) { g_HookMac = TRUE; g_NdiCf = g_DtNdi.Tramp; }
-        MacRegApply();
+        if (c->Flags & SPOOF_MAC) MacRegApply();
+    }
+
+    if (c->Flags & SPOOF_VOLUME) {
+        UNICODE_STRING n;
+        RtlInitUnicodeString(&n, L"NtQueryVolumeInformationFile");
+        g_Nqvi = MmGetSystemRoutineAddress(&n);
+        if (g_Nqvi && NT_SUCCESS(DetourInstall(&g_DtNqvi, g_Nqvi, (PVOID)HookNqvi))) { g_HookVol = TRUE; g_Nqvi = g_DtNqvi.Tramp; }
+
+        RtlInitUnicodeString(&n, L"NtQueryInformationFile");
+        g_Nqi = MmGetSystemRoutineAddress(&n);
+        if (g_Nqi && NT_SUCCESS(DetourInstall(&g_DtNqi, g_Nqi, (PVOID)HookNqi))) { g_HookVol = TRUE; g_Nqi = g_DtNqi.Tramp; }
     }
     if (c->Flags & SPOOF_SMBIOS) {
         UNICODE_STRING n;
@@ -959,6 +1100,8 @@ static NTSTATUS DoRevert()
     if (g_HookGpu) GpuRevert();
     if (g_HookSmb) { DetourRemove(&g_DtNqsi); g_HookSmb = FALSE; }
     if (g_HookMac) { DetourRemove(&g_DtNdi); g_HookMac = FALSE; }
+    if (g_DtNqvi.Active) DetourRemove(&g_DtNqvi);
+    if (g_DtNqi.Active) DetourRemove(&g_DtNqi);
     if (g_Cfg.Flags & SPOOF_MAC) MacRegRevert();
     if (g_HookVol || g_HookDisk) { UnhookAll(); g_HookVol = FALSE; g_HookDisk = FALSE; }
     if (g_Cfg.Flags & SPOOF_GUID) GuidRevert();
