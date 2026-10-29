@@ -11,6 +11,8 @@
 #define BK_KEY    L"\\Registry\\Machine\\SOFTWARE\\VnSpoofer"
 #define BIOS_KEY  L"\\Registry\\Machine\\HARDWARE\\DESCRIPTION\\System\\BIOS"
 #define GPU_CLASS L"{4d36e968-e325-11ce-bfc1-08002be10318}"
+#define NET_CLASS L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}"
+#define GPU_CLASS_KEY L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
 
 #define IOCTL_APPLY  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_REVERT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -675,8 +677,6 @@ static void GpuRevert()
     g_HookGpu = FALSE;
 }
 
-#define NET_CLASS L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}"
-#define GPU_CLASS_KEY L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
 
 static void MacHex(PWSTR out)
 {
