@@ -32,6 +32,7 @@ typedef struct _SPOOF_CFG {
     CHAR  BiosSerial[24];
     CHAR  SysProduct[24];
     CHAR  MachineGuid[40];
+    CHAR  GpuInst[40];
 } SPOOF_CFG, *PSPOOF_CFG;
 #pragma pack(pop)
 
@@ -880,6 +881,44 @@ static BOOLEAN GpuByDriver(HANDLE pci, PCWSTR want, PWSTR devOut, ULONG cch)
     return found;
 }
 
+static BOOLEAN GpuRenameInst(HANDLE pci, PCWSTR want)
+{
+    ULONG e = 0, m = 0, k;
+    BOOLEAN found = FALSE;
+
+    while (!found && NT_SUCCESS(ZwEnumerateKey(pci, e++, KeyBasicInformation, (PVOID)g_EnumBuf2, 512, &m))) {
+        PKEY_BASIC_INFORMATION eb = (PKEY_BASIC_INFORMATION)g_EnumBuf2;
+        WCHAR dev[460];
+
+        CopyW(dev, 460, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\", 460);
+        AppendN(dev, 460, eb->Name, eb->NameLength / 2);
+
+        HANDLE dh = OpenAbs(dev, KEY_READ, NULL);
+        if (!dh) continue;
+
+        k = 0;
+        while (!found && NT_SUCCESS(ZwEnumerateKey(dh, k++, KeyBasicInformation, (PVOID)g_EnumBuf, 512, &m))) {
+            PKEY_BASIC_INFORMATION ib = (PKEY_BASIC_INFORMATION)g_EnumBuf;
+            WCHAR inst[64] = {0};
+            WCHAR src[520], dst[540], cnt[8];
+
+            CopyW(inst, 64, ib->Name, ib->NameLength / 2);
+            if (!EqI(inst, want)) continue;
+
+            CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); Append(src, 520, inst);
+            CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
+
+            if (NT_SUCCESS(GpuMove(src, dst))) {
+                NumW(cnt, 8, 0);
+                RegSz(BK_KEY, cnt, src);
+                found = TRUE;
+            }
+        }
+        ZwClose(dh);
+    }
+    return found;
+}
+
 static NTSTATUS GpuApply()
 {
     HANDLE root = OpenAbs(GPU_CLASS_KEY, KEY_READ, NULL);
@@ -887,6 +926,19 @@ static NTSTATUS GpuApply()
     HANDLE pci = OpenAbs(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\PCI", KEY_ENUMERATE_SUB_KEYS, NULL);
     DbgDw(L"GpuPci", pci ? 1u : 0u);
     if (!pci) { ZwClose(root); return STATUS_UNSUCCESSFUL; }
+
+    if (g_Cfg.GpuInst[0]) {
+        WCHAR want[64] = {0};
+        for (int q = 0; q < 40 && g_Cfg.GpuInst[q]; q++) want[q] = (WCHAR)g_Cfg.GpuInst[q];
+        DbgStr(L"GpuWant", want);
+        if (GpuRenameInst(pci, want)) {
+            DbgInc(L"GpuByInst");
+            DbgDw(L"GpuSaved", 1);
+            ZwClose(pci); ZwClose(root);
+            g_HookGpu = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
 
     ULONG n = 0, i = 0, saved = 0, dmp = 0, pc = 0;
     WCHAR path[420], dev[460], src[520], dst[540], cnt[8];
@@ -904,13 +956,12 @@ static NTSTATUS GpuApply()
             for (ULONG i = 0; md[i]; i++) if (md[i] == L'&') { amp = 1; break; }
             if (!amp) {
                 WCHAR hw[300] = {0};
-                if (!RegMultiFirst(path, L"HardwareID", hw, 300)) continue;
-                CopyW(md, 300, hw, 300);
+                if (RegMultiFirst(path, L"HardwareID", hw, 300)) CopyW(md, 300, hw, 300);
             }
         }
         DbgInc(L"GpuMd");
         ml = (ULONG)VnStrLenW(md);
-        if (dmp < 3) {
+        if (dmp < 8) {
             WCHAR dn[16];
             CopyW(dn, 16, L"GpuMdTxt", 16);
             if (dmp) { WCHAR sx[4]; NumW(sx, 4, dmp); Append(dn, 16, sx); }
@@ -918,6 +969,7 @@ static NTSTATUS GpuApply()
             DbgDw(L"GpuMl", ml);
             dmp++;
         }
+        if (ml < 5) continue;
         mdp = md;
         if (ml > 4 && (md[0] == L'p' || md[0] == L'P') && md[3] == L'\\') { mdp = md + 4; ml -= 4; }
 
@@ -1015,6 +1067,19 @@ static void MacHex(PWSTR out)
 static void MacRegApply()
 {
     WCHAR hex[16], path[420], cnt[8];
+    if (g_Cfg.GpuInst[0]) {
+        WCHAR want[64] = {0};
+        for (int q = 0; q < 40 && g_Cfg.GpuInst[q]; q++) want[q] = (WCHAR)g_Cfg.GpuInst[q];
+        DbgStr(L"GpuWant", want);
+        if (GpuRenameInst(pci, want)) {
+            DbgInc(L"GpuByInst");
+            DbgDw(L"GpuSaved", 1);
+            ZwClose(pci); ZwClose(root);
+            g_HookGpu = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
     ULONG n = 0, i = 0, saved = 0, dmp = 0, pc = 0;
 
     MacHex(hex);

@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Text;
 
 namespace VnSpoofer.Services
 {
     class Identity
     {
-        public string Uuid, Disk, Volume, Mac, Guid, Board, Bios, Product;
+        public string Uuid, Disk, Volume, Mac, Guid, Board, Bios, Product, Gpu;
         public char MonA, MonB, MonC;
 
         static readonly Random R = new Random();

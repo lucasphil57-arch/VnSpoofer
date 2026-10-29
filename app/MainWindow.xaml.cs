@@ -151,6 +151,12 @@ namespace VnSpoofer
                 _st = new State();
                 CaptureOriginals();
                 _id = Identity.Random();
+                if (_st.Original.TryGetValue("gpu", out var _gp) && !string.IsNullOrEmpty(_gp))
+                {
+                    if (_gp.EndsWith("-SPOOF")) _gp = _gp.Substring(0, _gp.Length - 6);
+                    _st.Original["gpu"] = _gp;
+                    _id.Gpu = _gp;
+                }
                 Fill();
 
                 uint flags = Flags();
@@ -237,7 +243,13 @@ namespace VnSpoofer
             _st.Expected["volume"] = uint.TryParse(_id.Volume, out var _vv) ? _vv.ToString("X8") : _id.Volume;
             _st.Expected["mac"] = _id.Mac;
             _st.Expected["guid"] = _id.Guid;
-            if (_st.Original.TryGetValue("gpu", out var _g2) && !string.IsNullOrEmpty(_g2)) _st.Expected["gpu"] = _g2 + "-SPOOF";
+            if (_st.Original.TryGetValue("gpu", out var _g2) && !string.IsNullOrEmpty(_g2))
+            {
+                if (_g2.EndsWith("-SPOOF")) _g2 = _g2.Substring(0, _g2.Length - 6);
+                _st.Original["gpu"] = _g2;
+                _id.Gpu = _g2;
+                _st.Expected["gpu"] = _g2 + "-SPOOF";
+            }
             uint flags = (uint)_st.Flags;
             await System.Threading.Tasks.Task.Run(() => _drv.RevertAsync());
             bool okRe = flags == 0 || await System.Threading.Tasks.Task.Run(() => _drv.Apply(_id, flags));

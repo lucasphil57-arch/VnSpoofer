@@ -27,6 +27,7 @@ namespace VnSpoofer.Services
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 24)] public string BiosSerial;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 24)] public string SysProduct;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 40)] public string MachineGuid;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 40)] public string GpuInst;
         }
 
         public void Stat() { if (Mapped) Native.DeviceIoControl(_h, IOCTL_STATE, null, 0, new byte[1], 1, out _, IntPtr.Zero); }
@@ -113,7 +114,8 @@ namespace VnSpoofer.Services
                 BoardSerial = id.Board,
                 BiosSerial = id.Bios,
                 SysProduct = id.Product,
-                MachineGuid = id.Guid
+                MachineGuid = id.Guid,
+            GpuInst = id.Gpu ?? ""
             };
             int sz = Marshal.SizeOf<Cfg>();
             IntPtr p = Marshal.AllocHGlobal(sz);
