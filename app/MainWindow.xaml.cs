@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
@@ -57,8 +57,9 @@ namespace VnSpoofer
             SecVerif.Visibility = i == 2 ? Visibility.Visible : Visibility.Collapsed;
             SecClean.Visibility = i == 3 ? Visibility.Visible : Visibility.Collapsed;
             SecLogs.Visibility = i == 4 ? Visibility.Visible : Visibility.Collapsed;
+            SecTuto.Visibility = i == 5 ? Visibility.Visible : Visibility.Collapsed;
             NavDash.IsChecked = i == 0; NavComp.IsChecked = i == 1; NavVerif.IsChecked = i == 2;
-            NavClean.IsChecked = i == 3; NavLogs.IsChecked = i == 4;
+            NavClean.IsChecked = i == 3; NavLogs.IsChecked = i == 4; NavTuto.IsChecked = i == 5;
         }
 
         void Log(string m, string c = "#E7ECF3")
@@ -139,13 +140,13 @@ namespace VnSpoofer
                 _st.Expected["bios"] = _id.Bios;
                 _st.Expected["product"] = _id.Product;
                 _st.Expected["disk"] = _id.Disk;
-                _st.Expected["volume"] = _id.Volume;
+                _st.Expected["volume"] = uint.TryParse(_id.Volume, out var _vv) ? _vv.ToString("X8") : _id.Volume;
                 _st.Expected["mac"] = _id.Mac;
                 _st.Expected["guid"] = _id.Guid;
-                _st.Expected["gpu"] = "renomme";
+                if (SwGpu.IsChecked == true && _st.Original.TryGetValue("gpu", out var _go) && !string.IsNullOrEmpty(_go)) _st.Expected["gpu"] = _go + "-SPOOF";
 
-                if (SwIp.IsChecked == true) _st.Expected["ip"] = IpSpoof.Apply(_st);
-                if (SwMon.IsChecked == true) _st.Expected["monitor"] = MonitorSpoof.Apply(_id, _st);
+                if (SwIp.IsChecked == true) { var _nip = IpSpoof.Apply(_st); if (!string.IsNullOrEmpty(_nip)) _st.Expected["ip"] = _nip; }
+                if (SwMon.IsChecked == true) { var _nmo = MonitorSpoof.Apply(_id, _st); if (!string.IsNullOrEmpty(_nmo)) _st.Expected["monitor"] = _nmo; }
 
                 _st.Pending = true;
                 _st.Save();
@@ -157,7 +158,7 @@ namespace VnSpoofer
                 TxtCountdown.Text = "Spoof actif. Controle ci-contre, puis lance le jeu.";
                 Nav(2);
                 Refresh();
-                if (ChkLaunch.IsChecked == true) _drv.LaunchApex(Log);
+
             }
             finally { BtnSpoof.IsEnabled = true; }
         }
@@ -176,7 +177,7 @@ namespace VnSpoofer
                 if (_st.Expected.TryGetValue("bios", out var _bi)) _id.Bios = _bi;
                 if (_st.Expected.TryGetValue("product", out var _p)) _id.Product = _p;
                 if (_st.Expected.TryGetValue("disk", out var _d)) _id.Disk = _d;
-                if (_st.Expected.TryGetValue("volume", out var _v)) _id.Volume = _v;
+                if (_st.Expected.TryGetValue("volume", out var _v)) _id.Volume = uint.TryParse(_v, System.Globalization.NumberStyles.HexNumber, null, out var _vd) ? _vd.ToString() : _v;
                 if (_st.Expected.TryGetValue("mac", out var _m)) _id.Mac = _m;
                 if (_st.Expected.TryGetValue("guid", out var _g)) _id.Guid = _g;
             }
@@ -186,9 +187,10 @@ namespace VnSpoofer
             _st.Expected["bios"] = _id.Bios;
             _st.Expected["product"] = _id.Product;
             _st.Expected["disk"] = _id.Disk;
-            _st.Expected["volume"] = _id.Volume;
+            _st.Expected["volume"] = uint.TryParse(_id.Volume, out var _vv) ? _vv.ToString("X8") : _id.Volume;
             _st.Expected["mac"] = _id.Mac;
             _st.Expected["guid"] = _id.Guid;
+            if (_st.Original.TryGetValue("gpu", out var _g2) && !string.IsNullOrEmpty(_g2)) _st.Expected["gpu"] = _g2 + "-SPOOF";
             uint flags = (uint)_st.Flags;
             await _drv.RevertAsync(); if (flags != 0 && _drv.Apply(_id, flags)) Log("Re-applique.", "#33D17A"); else Log("Re-application echouee.", "#E5484D");
             BtnRevert.IsEnabled = true;
@@ -273,6 +275,20 @@ namespace VnSpoofer
             catch { }
         }
 
+        void Profile_Click(object s, RoutedEventArgs e)
+        {
+            string p = (s as FrameworkElement)?.Tag as string ?? "solo";
+            SwSmbios.IsChecked = true;
+            SwDisk.IsChecked = true;
+            SwVolume.IsChecked = true;
+            SwMac.IsChecked = true;
+            SwGuid.IsChecked = true;
+            SwGpu.IsChecked = true;
+            SwIp.IsChecked = true;
+            SwMon.IsChecked = true;
+            Nav(1);
+            Log($"Profil {p} charge : les 8 composants sont armes. Applique puis verifie avant de lancer le jeu.", "#33D17A");
+        }
         async void Clean_Click(object s, RoutedEventArgs e)
         {
             await Cleaner.RunAsync(Log);

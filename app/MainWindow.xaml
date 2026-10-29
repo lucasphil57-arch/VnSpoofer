@@ -1,4 +1,4 @@
-﻿<Window x:Class="VnSpoofer.MainWindow"
+<Window x:Class="VnSpoofer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="v7Zusanc" Height="740" Width="1080" WindowStartupLocation="CenterScreen"
@@ -16,7 +16,7 @@
           </Border>
           <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
             <TextBlock Text="v7Zusanc" FontSize="15" FontWeight="SemiBold"/>
-            <TextBlock Text="v7Silever · HWID · Apex Legends" Style="{StaticResource Mono}"/>
+            <TextBlock Text="v7Silever · HWID · multi-jeux" Style="{StaticResource Mono}"/>
           </StackPanel>
           <Border x:Name="PillBg" Background="#171D28" CornerRadius="20" Padding="11,4" Margin="18,0,0,0" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
@@ -52,13 +52,15 @@
           <RadioButton x:Name="NavLogs" Style="{StaticResource Nav}" GroupName="nav" Click="Nav_Click" Tag="4">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7C3;" Style="{StaticResource Icon}" Margin="0,0,10,0"/><TextBlock Text="Journal"/></StackPanel>
           </RadioButton>
+                <RadioButton x:Name="NavTuto" Style="{StaticResource Nav}" GroupName="nav" Click="Nav_Click" Tag="5">
+                    <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE82D;" Style="{StaticResource Icon}" Margin="0,0,10,0"/><TextBlock Text="Tutoriels"/></StackPanel>
+                </RadioButton>
           <Border Height="1" Background="{StaticResource Line}" Margin="6,14"/>
           <TextBlock Text="PROVIDER KDU" Style="{StaticResource Mono}" Margin="6,0,0,6"/>
           <ComboBox x:Name="CmbProvider" Style="{StaticResource DarkCombo}" Margin="4,0" SelectedIndex="0">
             <ComboBoxItem Content="Auto (rotatif)"/>
           </ComboBox>
           <CheckBox x:Name="ChkCleanBefore" Content="Cleaner avant spoof" IsChecked="True" Margin="6,10,0,0" FontSize="11"/>
-          <CheckBox x:Name="ChkLaunch" Content="Lancer Apex" Margin="6,0,0,0" FontSize="11"/>
         </StackPanel>
       </Border>
       <Grid Grid.Column="1" Margin="14,0,0,0">
@@ -177,6 +179,74 @@
             </Border>
           </StackPanel>
         </ScrollViewer>
+            <ScrollViewer x:Name="SecTuto" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="TUTORIELS PAR ANTI-TRICHE" Style="{StaticResource Mono}" Margin="2,0,0,10"/>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="CE QUI EST REELLEMENT COUVERT" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="SMBIOS (UUID, serie carte mere, serie BIOS, modele) via NtQuerySystemInformation. Serie disque via IOCTL_STORAGE_QUERY_PROPERTY. Serie volume via IRP_MJ_QUERY_VOLUME_INFORMATION. MAC via les OID NDIS. MachineGuid et EDID dans le registre. Identifiant GPU par renommage de la cle Enum. IP par netsh."/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="NON couvert : TPM et son EK, etat Secure Boot, CPUID, SPD des barrettes, numero de serie grave dans la ROM du GPU, et surtout les lectures directes du firmware par un pilote noyau. Un anti-triche qui lit la memoire physique passe au-dessus de nos hooks."/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Le spoof est temporaire : rien sur disque, tout disparait au redemarrage. Il ne debannit pas un compte, il change l'empreinte pour un nouveau compte."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="EA JAVELIN" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Apex Legends (depuis le 29/09/2026), Battlefield 6, EA SPORTS FC, skate." Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="1. Redemarre : un driver deja mappe squatte le nom de device et le nouveau mapping echoue. 2. Ferme les outils noyau (RGB, monitoring, overclock). 3. Applique, puis verifie que les 11 lignes sont OK. 4. Lance Apex. Javelin charge son pilote au demarrage du jeu et peut relire le materiel en direct : le spoof est vu par les couches user-mode, pas garanti contre ses lectures noyau. Apex n'exige pas Secure Boot ; Battlefield 6 et les FC l'exigent."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="javelin" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="EASY ANTI-CHEAT" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Rust, Dead by Daylight, Fortnite, Halo Infinite, Naraka" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="EAC combine user-mode et noyau et hashe un composite : SMBIOS, disque, volume, MAC, MachineGuid. Un seul identifiant inchange suffit a faire correspondre l'empreinte, donc tous les composants doivent etre actifs. Redemarre avant, applique, verifie, puis lance le jeu. Ferme les overlays et les autres spoofer."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="eac" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="BATTLEYE" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Rainbow Six Siege, PUBG, Escape from Tarkov, DayZ, Arma" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="BattlEye inspecte en plus les handles ouverts et la liste des pilotes charges. Un driver mappe manuellement est visible dans cette liste : c'est la limite principale ici. Applique tous les composants et evite de garder d'autres outils noyau ouverts pendant la session."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="battleye" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="VANGUARD" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Valorant, League of Legends" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="vgk.sys se charge au demarrage de Windows, donc avant nous, et peut avoir lu le materiel deja. C'est l'anti-triche le plus hostile au mapping manuel. Traite le spoof comme partiel : compte sur les composants registre et disque, pas sur le SMBIOS. Redemarre entre chaque session. Vanguard exige Secure Boot et TPM 2.0."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="vanguard" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="RICOCHET" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Call of Duty Modern Warfare, Warzone" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Ricochet relit le materiel cote noyau et s'appuie sur TPM et Secure Boot. Meme limite que Vanguard : le SMBIOS est le maillon faible. Applique, verifie, lance le jeu, et ne redemarre pas pendant la session."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="ricochet" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="SANS ANTI-TRICHE" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="Jeux solo, Steam hors ligne, emulateurs" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Aucun risque de detection. Tous les composants peuvent rester actifs, le spoof est purement cosmetique."/>
+                            <Button Content="Appliquer ce profil" Style="{StaticResource Btn}" HorizontalAlignment="Left" Margin="0,12,0,0" Tag="solo" Click="Profile_Click"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         <Border x:Name="SecLogs" Visibility="Collapsed" Style="{StaticResource Card}" Padding="0">
           <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto" Padding="16">
             <TextBlock x:Name="TxtLog" FontFamily="Cascadia Mono" FontSize="11.5" TextWrapping="Wrap"/>
@@ -192,7 +262,7 @@
           <Button x:Name="BtnReboot" Content="Redemarrer" Style="{StaticResource Ghost}" Margin="12,0,0,0" Click="Reboot_Click"/>
           <Button x:Name="BtnCancelCd" Content="Annuler le reboot" Style="{StaticResource Ghost}" Margin="12,0,0,0" Visibility="Collapsed" Click="CancelCd_Click"/>
         </StackPanel>
-        <TextBlock Text="v2.1" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        <TextBlock Text="v2.2" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
       </Grid>
     </Border>
   </Grid>
