@@ -350,7 +350,7 @@
           <Button x:Name="BtnReboot" Content="Redemarrer" Style="{StaticResource Ghost}" Margin="12,0,0,0" Click="Reboot_Click"/>
           <Button x:Name="BtnCancelCd" Content="Annuler le reboot" Style="{StaticResource Ghost}" Margin="12,0,0,0" Visibility="Collapsed" Click="CancelCd_Click"/>
         </StackPanel>
-        <TextBlock Text="v2.3" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        <TextBlock Text="v2.4" Style="{StaticResource Mono}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
       </Grid>
     </Border>
     <Grid x:Name="Splash" Grid.RowSpan="3" Panel.ZIndex="80">

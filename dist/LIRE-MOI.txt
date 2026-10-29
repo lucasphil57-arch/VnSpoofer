@@ -1,0 +1,31 @@
+v7Zusanc - spoofer temporaire HWID
+==================================
+
+CE QUE C'EST
+Change l'empreinte materielle de la machine pour la duree d'une session. Rien n'est installe, rien n'est ecrit dans le BIOS. Au redemarrage, tout disparait.
+
+PREREQUIS
+Windows 10 ou 11, 64 bits uniquement. Droits administrateur obligatoires. La liste de blocage des pilotes vulnerables doit etre levee.
+
+PREMIERE UTILISATION
+1. Clic droit sur v7Zusanc.exe, Executer en tant qu'administrateur.
+2. Onglet Journal, bouton Diagnostic : il indique ce qui bloque, en rouge.
+3. Si la liste de blocage ou l'integrite de la memoire est active, cliquer Preparer la machine.
+4. Redemarrer le PC.
+5. Relancer l'app en administrateur.
+6. Redemarrer une derniere fois, puis ouvrir l'app.
+7. Choisir le profil du jeu, appliquer, attendre la fin complete.
+8. Onglet Verification : 11 sur 11, aucun bandeau rouge. Sinon, ne pas lancer le jeu.
+9. Lancer le jeu.
+
+APRES LA SESSION
+Cliquer Restaurer, puis redemarrer. La MAC, le GUID et la cle GPU reviennent a l'origine.
+
+CE QUI N'EST PAS COUVERT
+TPM et son EK, etat Secure Boot, CPUID, SPD des barrettes, serie gravee dans la ROM du GPU, et toute lecture directe du firmware par un pilote noyau. Un anti-triche qui relit le materiel depuis son propre pilote voit encore l'empreinte d'origine.
+
+PATCHGUARD
+Le spoofer ecrit dans le code du noyau, que Windows surveille. Sur une session longue, Windows peut redemarrer la machine. Rien n'est casse, tout revient a l'origine. Appliquer juste avant de jouer.
+
+JEUX
+EAC, BattlEye et Javelin. Vanguard et Ricochet ne sont pas couverts.

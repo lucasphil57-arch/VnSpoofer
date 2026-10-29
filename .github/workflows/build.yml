@@ -1,4 +1,4 @@
-﻿name: build
+name: build
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -19,7 +19,15 @@ jobs:
       - name: App
         run: dotnet publish app\VnSpoofer.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o out
 
+      - name: Paquet
+        shell: pwsh
+        run: |
+          Move-Item out\VnSpoofer.exe out\v7Zusanc.exe -Force
+          Copy-Item dist\LIRE-MOI.txt out\LIRE-MOI.txt -Force
+
       - uses: actions/upload-artifact@v4
         with:
-          name: VnSpoofer
-          path: out/VnSpoofer.exe
+          name: v7Zusanc
+          path: |
+            out/v7Zusanc.exe
+            out/LIRE-MOI.txt
