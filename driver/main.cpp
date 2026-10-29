@@ -931,6 +931,16 @@ static BOOLEAN GpuRenameInst(HANDLE pci, PCWSTR want)
             CopyW(inst, 64, ib->Name, ib->NameLength / 2);
             if (!EqI(inst, want)) continue;
 
+            if (inst[0] && want[0]) {
+                ULONG il2 = (ULONG)VnStrLenW(inst), wl2 = (ULONG)VnStrLenW(want);
+                if (il2 > 6 && il2 == wl2 + 6) {
+                    BOOLEAN tail = TRUE;
+                    for (ULONG q2 = 0; q2 < 6; q2++)
+                        if (RtlUpcaseUnicodeChar(inst[wl2 + q2]) != RtlUpcaseUnicodeChar(L"-SPOOF"[q2])) { tail = FALSE; break; }
+                    if (tail) return TRUE;
+                }
+            }
+
             CopyW(src, 520, dev, 520); Append(src, 520, L"\\"); Append(src, 520, inst);
             CopyW(dst, 540, src, 540); Append(dst, 540, L"-SPOOF");
 
