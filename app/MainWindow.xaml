@@ -115,8 +115,6 @@
                   <Button x:Name="ProfJav" Content="Javelin" Style="{StaticResource ProfCard}" Tag="javelin" Click="Profile_Click"/>
                   <Button x:Name="ProfEac" Content="EAC" Style="{StaticResource ProfCard}" Tag="eac" Click="Profile_Click"/>
                   <Button x:Name="ProfBe" Content="BattlEye" Style="{StaticResource ProfCard}" Tag="battleye" Click="Profile_Click"/>
-                  <Button x:Name="ProfVg" Content="Vanguard" Style="{StaticResource ProfCard}" Tag="vanguard" Click="Profile_Click"/>
-                  <Button x:Name="ProfRc" Content="Ricochet" Style="{StaticResource ProfCard}" Tag="ricochet" Click="Profile_Click"/>
                   <Button x:Name="ProfSolo" Content="Solo" Style="{StaticResource ProfCard}" Tag="solo" Click="Profile_Click"/>
                 </WrapPanel>
                 <TextBlock x:Name="TxtProfDesc" Style="{StaticResource Mono}" TextWrapping="Wrap" Margin="0,3,0,0"/>
@@ -246,11 +244,19 @@
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
+                <TextBlock Text="NIVEAU DE COUVERTURE" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="PROUVE : les 11 composants sont remplaces et verifiables dans l'onglet Verification, en user-mode comme sur les lectures registre et IOCTL. C'est ce que fait ce spoofer, rien de plus."/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="NON COUVERT : TPM et son EK, etat Secure Boot, CPUID, SPD des barrettes, serie gravee dans la ROM du GPU, et toute lecture directe du firmware par un pilote noyau. Un anti-triche qui relit le materiel depuis son propre pilote voit donc encore l'empreinte d'origine."/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Retires de la liste parce que non tenables ici : Valorant et League of Legends (Vanguard se charge avant nous et exige Secure Boot et TPM), Call of Duty et Warzone (Ricochet, meme profil). Ils demarreront, mais l'empreinte ne sera pas neuve."/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+              <StackPanel>
                 <TextBlock Text="FICHE PAR JEU" FontSize="14" FontWeight="SemiBold"/>
                 <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="Chaque jeu, son anti-triche, le profil a armer. Le profil est un point de depart : si le jeu relit le materiel, armer davantage ne compense pas une lecture noyau."/>
                 <Grid Margin="0,10,0,0">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                  <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Text="JEU" Style="{StaticResource Mono}"/><TextBlock Grid.Row="0" Grid.Column="1" Text="ANTI-TRICHE" Style="{StaticResource Mono}"/><TextBlock Grid.Row="0" Grid.Column="2" Text="PROFIL" Style="{StaticResource Mono}"/>
                   <TextBlock Grid.Row="1" Text="Apex Legends" Margin="0,4"/><TextBlock Grid.Row="1" Grid.Column="1" Text="EA Javelin" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="1" Grid.Column="2" Text="Javelin" Margin="0,4" Foreground="{StaticResource Accent2}"/>
                   <TextBlock Grid.Row="2" Text="Battlefield 6" Margin="0,4"/><TextBlock Grid.Row="2" Grid.Column="1" Text="EA Javelin" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="2" Grid.Column="2" Text="Javelin (Secure Boot requis)" Margin="0,4" Foreground="{StaticResource Accent2}"/>
@@ -266,9 +272,6 @@
                   <TextBlock Grid.Row="12" Text="Escape from Tarkov" Margin="0,4"/><TextBlock Grid.Row="12" Grid.Column="1" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="12" Grid.Column="2" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Accent2}"/>
                   <TextBlock Grid.Row="13" Text="DayZ" Margin="0,4"/><TextBlock Grid.Row="13" Grid.Column="1" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="13" Grid.Column="2" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Accent2}"/>
                   <TextBlock Grid.Row="14" Text="Arma Reforger" Margin="0,4"/><TextBlock Grid.Row="14" Grid.Column="1" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="14" Grid.Column="2" Text="BattlEye" Margin="0,4" Foreground="{StaticResource Accent2}"/>
-                  <TextBlock Grid.Row="15" Text="Valorant" Margin="0,4"/><TextBlock Grid.Row="15" Grid.Column="1" Text="Vanguard" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="15" Grid.Column="2" Text="Vanguard (Secure Boot + TPM 2.0)" Margin="0,4" Foreground="{StaticResource Accent2}"/>
-                  <TextBlock Grid.Row="16" Text="League of Legends" Margin="0,4"/><TextBlock Grid.Row="16" Grid.Column="1" Text="Vanguard" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="16" Grid.Column="2" Text="Vanguard" Margin="0,4" Foreground="{StaticResource Accent2}"/>
-                  <TextBlock Grid.Row="17" Text="CoD MW / Warzone / BO" Margin="0,4"/><TextBlock Grid.Row="17" Grid.Column="1" Text="Ricochet" Margin="0,4" Foreground="{StaticResource Muted}"/><TextBlock Grid.Row="17" Grid.Column="2" Text="Ricochet" Margin="0,4" Foreground="{StaticResource Accent2}"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -298,22 +301,8 @@
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Ne garde aucun autre outil noyau ouvert. 3. Arme ce profil, applique, verifie. 4. Lance le jeu. Pour Tarkov, ferme le launcher Battlestate avant d'appliquer, il garde sinon une session ouverte."/>
               </StackPanel>
             </Border>
-            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="VANGUARD" FontSize="15" FontWeight="SemiBold"/>
-                <TextBlock Text="Valorant, League of Legends" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="vgk.sys se charge au demarrage de Windows, donc avant nous, et a deja pu lire le materiel. C'est l'anti-triche le plus hostile au mapping manuel. Traite le spoof comme partiel : compte sur le registre et le disque, pas sur le SMBIOS."/>
-                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Arme ce profil, applique, verifie. 3. Lance Valorant. Vanguard exige Secure Boot et TPM 2.0 actifs : si le jeu refuse de demarrer, ce n'est pas le spoof, c'est le BIOS. Le GPU n'est pas renomme sur ce profil, le renommage peut forcer une reinstallation du pilote graphique."/>
-              </StackPanel>
-            </Border>
-            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="RICOCHET" FontSize="15" FontWeight="SemiBold"/>
-                <TextBlock Text="Call of Duty Modern Warfare, Warzone, Black Ops" Style="{StaticResource Mono}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,10,0,0" Text="Ricochet relit le materiel cote noyau et s'appuie sur TPM et Secure Boot. Meme limite que Vanguard : le SMBIOS est le maillon faible. Le profil reste volontairement sobre, sans GPU ni IP."/>
-                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19" Foreground="{StaticResource Muted}" Margin="0,8,0,0" Text="1. Redemarre. 2. Ferme Battle.net et le launcher CoD. 3. Arme ce profil, applique, verifie. 4. Lance le jeu. Ne redemarre pas pendant la session."/>
-              </StackPanel>
-            </Border>
+            
+            
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Text="SANS ANTI-TRICHE" FontSize="15" FontWeight="SemiBold"/>

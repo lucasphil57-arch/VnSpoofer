@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
@@ -28,6 +28,24 @@ namespace VnSpoofer.Services
             if (GetVolumeInformationW(root, sb, 32, out uint s, out _, out _, fs, 32))
                 return s.ToString("X8");
             return "";
+        }
+
+        [DllImport("user32")]
+        public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+
+        [DllImport("user32")]
+        public static extern bool ReleaseCapture();
+
+        public static void DragWindow(Window w)
+        {
+            try
+            {
+                var h = new WindowInteropHelper(w).Handle;
+                if (h == IntPtr.Zero) return;
+                ReleaseCapture();
+                SendMessage(h, 0x00A1, (IntPtr)0x0002, IntPtr.Zero);
+            }
+            catch { }
         }
 
         [DllImport("dwmapi.dll")]

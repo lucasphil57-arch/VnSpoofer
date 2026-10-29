@@ -23,16 +23,21 @@ namespace VnSpoofer
         public MainWindow()
         {
             InitializeComponent();
-            _profBtns.AddRange(new[] { ProfAll, ProfJav, ProfEac, ProfBe, ProfVg, ProfRc, ProfSolo });
+            _profBtns.AddRange(new[] { ProfAll, ProfJav, ProfEac, ProfBe, ProfSolo });
             Native.Round(this);
             _st = State.Load();
 
             if (_st.Pending && _st.Id != null)
             {
                 _id = _st.Id;
+                if (_st.Original == null) _st.Original = new Dictionary<string, string>();
+                if (_st.Expected == null) _st.Expected = new Dictionary<string, string>();
                 RestoreToggles();
                 Nav(2);
-                _ = ResumeAsync();
+                BtnRevert.IsEnabled = true;
+                TxtDashTitle.Text = "Identite precedente enregistree";
+                Log("Identite precedente chargee, rien n'est applique. Clique APPLIQUER pour reactiver.", "#F5A623");
+                Refresh();
             }
             else
             {
@@ -56,7 +61,7 @@ namespace VnSpoofer
             Splash.BeginAnimation(OpacityProperty, fade);
         }
 
-        void Drag(object s, MouseButtonEventArgs e) { try { DragMove(); } catch { } }
+        void Drag(object s, MouseButtonEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed) Native.DragWindow(this); }
         void Min_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
         void Close_Click(object s, RoutedEventArgs e) => Close();
 
