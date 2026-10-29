@@ -1067,19 +1067,6 @@ static void MacHex(PWSTR out)
 static void MacRegApply()
 {
     WCHAR hex[16], path[420], cnt[8];
-    if (g_Cfg.GpuInst[0]) {
-        WCHAR want[64] = {0};
-        for (int q = 0; q < 40 && g_Cfg.GpuInst[q]; q++) want[q] = (WCHAR)g_Cfg.GpuInst[q];
-        DbgStr(L"GpuWant", want);
-        if (GpuRenameInst(pci, want)) {
-            DbgInc(L"GpuByInst");
-            DbgDw(L"GpuSaved", 1);
-            ZwClose(pci); ZwClose(root);
-            g_HookGpu = TRUE;
-            return STATUS_SUCCESS;
-        }
-    }
-
     ULONG n = 0, i = 0, saved = 0, dmp = 0, pc = 0;
 
     MacHex(hex);
